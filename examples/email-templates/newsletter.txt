@@ -1,0 +1,41 @@
+Subject: {{newsletter_title}} - {{month}} {{year}}
+
+Hi {{name}},
+
+Welcome to our monthly newsletter! Here's what's new this month:
+
+{{newsletter_title}}
+====================
+
+{{featured_article}}
+
+HIGHLIGHTS THIS MONTH:
+---------------------
+{{#each highlights}}
+• {{this}}
+{{/each}}
+
+UPCOMING EVENTS:
+---------------
+{{#each events}}
+📅 {{date}} - {{title}}
+   Location: {{location}}
+   Details: {{description}}
+
+{{/each}}
+
+RESOURCES:
+----------
+• Blog: {{blog_url}}
+• Support: {{support_email}}
+• Community: {{community_url}}
+
+---
+Best regards,
+The {{company}} Team
+
+{{company}}
+{{address}}
+{{phone}}
+
+Unsubscribe: {{unsubscribe_url}}

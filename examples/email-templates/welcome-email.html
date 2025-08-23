@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Welcome Email</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px 20px;
+            text-align: center;
+            border-radius: 8px 8px 0 0;
+        }
+        .content {
+            background: #f8f9fa;
+            padding: 30px 20px;
+            border-radius: 0 0 8px 8px;
+        }
+        .button {
+            display: inline-block;
+            background: #667eea;
+            color: white;
+            padding: 12px 24px;
+            text-decoration: none;
+            border-radius: 4px;
+            margin: 20px 0;
+        }
+        .footer {
+            text-align: center;
+            font-size: 12px;
+            color: #666;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Welcome {{name}}!</h1>
+        <p>Thank you for joining us at {{company}}</p>
+    </div>
+    
+    <div class="content">
+        <p>Hello {{name}},</p>
+        
+        <p>We're excited to have you as part of our community! Your account has been successfully created and you're ready to get started.</p>
+        
+        <h3>What's Next?</h3>
+        <ul>
+            <li>Complete your profile setup</li>
+            <li>Explore our features</li>
+            <li>Connect with other members</li>
+        </ul>
+        
+        <div style="text-align: center;">
+            <a href="{{dashboard_url}}" class="button">Get Started</a>
+        </div>
+        
+        <p>If you have any questions, don't hesitate to reach out to our support team at {{support_email}}.</p>
+        
+        <p>Welcome aboard!</p>
+        <p>The {{company}} Team</p>
+    </div>
+    
+    <div class="footer">
+        <p>{{company}} | {{address}}</p>
+        <p>You received this email because you signed up for our service.</p>
+    </div>
+</body>
+</html>

@@ -1,0 +1,51 @@
+{
+  "name": "workflow-isolation-tests",
+  "version": "1.0.0",
+  "description": "Comprehensive test suite for workflow isolation bug detection and prevention",
+  "scripts": {
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "test:unit": "jest activity-loading.unit.test.ts",
+    "test:integration": "jest concurrent-execution.integration.test.ts",
+    "test:regression": "jest regression.test.ts",
+    "test:performance": "jest performance.test.ts",
+    "test:edge-cases": "jest edge-cases.test.ts",
+    "test:caching": "jest caching-behavior.test.ts",
+    "test:ci": "jest --ci --coverage --reporters=default --reporters=jest-junit",
+    "test:debug": "jest --verbose --no-cache",
+    "clean": "rm -rf coverage test-results node_modules",
+    "lint": "eslint **/*.ts",
+    "type-check": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.5.5",
+    "@types/node": "^20.6.0",
+    "@types/pg": "^8.10.2",
+    "@typescript-eslint/eslint-plugin": "^6.7.0",
+    "@typescript-eslint/parser": "^6.7.0",
+    "eslint": "^8.49.0",
+    "jest": "^29.7.0",
+    "jest-junit": "^16.0.0",
+    "ts-jest": "^29.1.1",
+    "typescript": "^5.2.2"
+  },
+  "dependencies": {
+    "ioredis": "^5.3.2",
+    "pg": "^8.11.3"
+  },
+  "jest": {
+    "preset": "ts-jest",
+    "testEnvironment": "node"
+  },
+  "keywords": [
+    "workflow",
+    "isolation",
+    "testing",
+    "temporal",
+    "activities",
+    "regression"
+  ],
+  "author": "QA Team",
+  "license": "MIT"
+}

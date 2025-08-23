@@ -1,0 +1,33 @@
+{
+  "smtp": {
+    "host": "smtp.gmail.com",
+    "port": 587,
+    "secure": false,
+    "auth": {
+      "user": "${SMTP_USER}",
+      "pass": "${SMTP_PASS}"
+    }
+  },
+  "defaults": {
+    "from": {
+      "name": "Your Company",
+      "address": "noreply@yourcompany.com"
+    },
+    "replyTo": "support@yourcompany.com"
+  },
+  "settings": {
+    "maxConnections": 5,
+    "maxMessages": 100,
+    "rateDelta": 1000,
+    "rateLimit": 5
+  },
+  "templates": {
+    "basePath": "./examples/email-templates",
+    "defaultEncoding": "utf8"
+  },
+  "attachments": {
+    "maxSize": "10MB",
+    "allowedTypes": [".pdf", ".doc", ".docx", ".txt", ".jpg", ".png", ".zip"],
+    "basePath": "./examples/attachments"
+  }
+}

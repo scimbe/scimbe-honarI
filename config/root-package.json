@@ -1,0 +1,70 @@
+{
+  "name": "temporal-ai-workflow-platform",
+  "version": "2.0.0",
+  "description": "Comprehensive MLOps-Integrated Workflow Orchestration Platform",
+  "private": true,
+  "workspaces": [
+    "services/*",
+    "infrastructure/*"
+  ],
+  "scripts": {
+    "dev": "docker-compose -f docker-compose.dev.yaml up --build",
+    "dev:clean": "docker-compose -f docker-compose.dev.yaml down -v && docker system prune -f",
+    "build": "npm run build:services && npm run build:infrastructure",
+    "build:services": "lerna run build --scope=\"@platform/service-*\"",
+    "build:infrastructure": "lerna run build --scope=\"@platform/infra-*\"",
+    "test": "lerna run test",
+    "test:integration": "npm run test:setup && jest --config=jest.integration.config.js",
+    "test:e2e": "npm run test:setup && npm run test:e2e:run",
+    "test:setup": "docker-compose -f docker-compose.test.yaml up -d --build",
+    "test:teardown": "docker-compose -f docker-compose.test.yaml down -v",
+    "lint": "lerna run lint",
+    "lint:fix": "lerna run lint:fix",
+    "typecheck": "lerna run typecheck",
+    "security:scan": "npm audit && lerna run security:scan",
+    "docker:build": "docker-compose build --no-cache",
+    "docker:build:services": "./scripts/build-services.sh",
+    "docker:push": "./scripts/push-images.sh",
+    "k8s:deploy": "kubectl apply -f deployment/kubernetes/",
+    "k8s:undeploy": "kubectl delete -f deployment/kubernetes/",
+    "helm:install": "helm install temporal-ai-platform deployment/helm/temporal-ai-platform/",
+    "helm:upgrade": "helm upgrade temporal-ai-platform deployment/helm/temporal-ai-platform/",
+    "helm:uninstall": "helm uninstall temporal-ai-platform",
+    "db:migrate": "lerna run db:migrate",
+    "db:seed": "lerna run db:seed",
+    "db:reset": "lerna run db:reset",
+    "logs": "docker-compose logs -f",
+    "logs:service": "docker-compose logs -f",
+    "metrics": "curl http://localhost:9090/metrics",
+    "health": "curl http://localhost:8888/health-monitor/status"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.5.8",
+    "@types/node": "^20.9.0",
+    "@typescript-eslint/eslint-plugin": "^6.11.0",
+    "@typescript-eslint/parser": "^6.11.0",
+    "eslint": "^8.54.0",
+    "eslint-config-prettier": "^9.0.0",
+    "eslint-plugin-prettier": "^5.0.1",
+    "jest": "^29.7.0",
+    "lerna": "^7.4.2",
+    "prettier": "^3.1.0",
+    "ts-jest": "^29.1.1",
+    "typescript": "^5.2.2"
+  },
+  "keywords": [
+    "temporal",
+    "ai",
+    "workflow",
+    "mlops",
+    "orchestration",
+    "microservices",
+    "kubernetes"
+  ],
+  "author": "Platform Development Team",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
+  }
+}

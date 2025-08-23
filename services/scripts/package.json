@@ -1,0 +1,18 @@
+{
+  "name": "workflow-database-generator",
+  "version": "1.0.0",
+  "description": "Intelligent Workflow & Activity Database Generator with Claude Flow integration",
+  "main": "workflow-database-generator.js",
+  "scripts": {
+    "generate": "node workflow-database-generator.js",
+    "test": "echo \"No tests yet\" && exit 0"
+  },
+  "dependencies": {
+    "pg": "^8.11.0"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  },
+  "author": "Claude Flow AI System",
+  "license": "MIT"
+}

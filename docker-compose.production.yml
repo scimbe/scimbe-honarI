@@ -1,0 +1,399 @@
+# version: '3.8'  # Obsolete in modern Docker Compose
+
+name: temporal-workflow-platform
+
+services:
+  # ============================================================================
+  # INFRASTRUCTURE SERVICES
+  # ============================================================================
+
+  # PostgreSQL Database - Primary storage for all services
+  postgres:
+    image: postgres:15-alpine
+    container_name: temporal-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: temporal_ai_platform
+      POSTGRES_USER: temporal
+      POSTGRES_PASSWORD: temporal
+      POSTGRES_MULTIPLE_DATABASES: temporal_ai_platform
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infrastructure/postgres/init-multiple-dbs.sh:/docker-entrypoint-initdb.d/init-multiple-dbs.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U temporal -d temporal"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - temporal-network
+
+  # Redis Cache - Session management and job queuing
+  redis:
+    image: redis:7-alpine
+    container_name: temporal-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - temporal-network
+
+  # ============================================================================
+  # TEMPORAL INFRASTRUCTURE
+  # ============================================================================
+
+  # Temporal Server - Workflow orchestration engine  
+  temporal-server:
+    image: temporalio/auto-setup:1.28.1
+    container_name: temporal-server
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - DB=postgres12
+      - DB_PORT=5432
+      - POSTGRES_USER=temporal
+      - POSTGRES_PWD=temporal
+      - POSTGRES_SEEDS=postgres
+      - POSTGRES_DB=temporal_ai_platform
+      - TEMPORAL_CLI_ADDRESS=temporal-server:7233
+    ports:
+      - "7233:7233"   # Temporal gRPC API
+    healthcheck:
+      test: ["CMD", "sh", "-c", "temporal --address temporal-server:7233 workflow list --namespace default || exit 1"]
+      interval: 30s
+      timeout: 15s
+      retries: 10
+      start_period: 90s
+    networks:
+      - temporal-network
+
+  # Temporal Web UI
+  temporal-web:
+    image: temporalio/ui:2.32.0
+    container_name: temporal-web
+    restart: unless-stopped
+    depends_on:
+      - temporal-server
+    environment:
+      - TEMPORAL_ADDRESS=temporal-server:7233
+      - TEMPORAL_CORS_ORIGINS=http://localhost:3003,http://localhost:3001,http://localhost:8092
+    ports:
+      - "8233:8080"   # Temporal Web UI
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - temporal-network
+
+  # ============================================================================
+  # CORE APPLICATION SERVICES
+  # ============================================================================
+
+  # Enhanced Workflow Editor API Service - Professional workflow management
+  enhanced-workflow-editor:
+    build:
+      context: ./services/enhanced-workflow-editor
+      dockerfile: Dockerfile
+      no_cache: true
+    container_name: enhanced-workflow-editor
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      temporal-server:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      HOST: 0.0.0.0
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: temporal_ai_platform
+      POSTGRES_USER: temporal
+      POSTGRES_PASSWORD: temporal
+      TEMPORAL_ADDRESS: temporal-server:7233
+      WORKFLOW_AUTOMATION_URL: http://workflow-automation:8092
+    ports:
+      - "3001:3001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - temporal-network
+
+
+  # Frontend Service - React/TypeScript workflow editor interface
+  frontend:
+    build:
+      context: ./services/frontend
+      dockerfile: Dockerfile
+    container_name: frontend
+    restart: unless-stopped
+    depends_on:
+      enhanced-workflow-editor:
+        condition: service_healthy
+      workflow-automation:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      # API endpoints for frontend to connect to
+      VITE_API_URL: http://localhost:3001
+      VITE_WORKFLOW_AUTOMATION_URL: http://localhost:8092
+      VITE_TEMPORAL_WEB_URL: http://localhost:8233
+    ports:
+      - "3000:3000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - temporal-network
+
+  # Drag-and-Drop Workflow Editor - VSCode-like code editor
+  dragdrop-workflow-editor:
+    build: 
+      context: ./services/dragdrop-workflow-editor
+      dockerfile: Dockerfile
+    container_name: dragdrop-workflow-editor
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      enhanced-workflow-editor:
+        condition: service_healthy
+    environment:
+      PORT: 3004
+      POSTGRES_HOST: temporal-postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: temporal_ai_platform
+      POSTGRES_USER: temporal
+      POSTGRES_PASSWORD: temporal
+      SERVICE_NAME: "Drag-and-Drop Workflow Editor"
+      OPENAI_API_ENDPOINT: "http://host.docker.internal:4000/openai/v1"
+      OPENAI_MODEL: "vscode-lm-proxy"
+      OPENAI_API_KEY: "sk-123456"
+    ports:
+      - "3004:3004"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3004/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - temporal-network
+
+
+  # Workflow Automation Service - Main API and workflow generation service
+  workflow-automation:
+    build: 
+      context: ./services/workflow-automation
+      dockerfile: Dockerfile
+      no_cache: true
+    container_name: workflow-automation
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      temporal-server:
+        condition: service_healthy
+    environment:
+      # Basic configuration
+      NODE_ENV: production
+      PORT: 8092
+      HOST: 0.0.0.0
+      
+      # Database connections
+      DATABASE_URL: postgresql://temporal:temporal@postgres:5432/temporal_ai_platform
+      REDIS_URL: redis://redis:6379
+      
+      # Temporal configuration
+      TEMPORAL_ADDRESS: temporal-server:7233
+      TEMPORAL_NAMESPACE: default
+      TEMPORAL_TASK_QUEUE: workflow-automation
+      
+      # Service URLs for container communication
+      TEMPORAL_WORKER_URL: http://temporal-worker:8081
+      
+      # Application settings
+      MAX_ITERATIONS: 25
+      QUALITY_THRESHOLD: 95
+      LOG_LEVEL: info
+      
+      # AI Configuration - use local dragdrop-workflow-editor
+      OPENAI_API_URL: http://dragdrop-workflow-editor:3004/api/openai
+      OPENAI_API_ENDPOINT: http://dragdrop-workflow-editor:3004/api/openai
+      AI_GATEWAY_URL: http://dragdrop-workflow-editor:3004/api/openai
+      LLM_API_URL: http://dragdrop-workflow-editor:3004/api/openai/chat/completions
+      OPENAI_MODEL: vscode-lm-proxy
+      OPENAI_API_KEY: sk-123456
+      
+      # Security settings
+      CORS_ORIGIN: "*"
+      JWT_SECRET: workflow-automation-secret-key-change-in-production
+      
+    ports:
+      - "8092:8092"  # Main API port
+    volumes:
+      - workflow_logs:/app/logs
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8092/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - temporal-network
+
+  # Temporal Worker Service - Executes workflows and activities
+  temporal-worker:
+    build: 
+      context: ./services/temporal-worker
+      dockerfile: Dockerfile  
+      no_cache: true
+    container_name: temporal-worker
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      temporal-server:
+        condition: service_healthy
+      workflow-automation:
+        condition: service_started
+    environment:
+      # Basic configuration
+      NODE_ENV: production
+      PORT: 8081
+      HOST: 0.0.0.0
+      
+      # Database connection
+      DATABASE_URL: postgresql://temporal:temporal@postgres:5432/temporal_ai_platform
+      
+      # Temporal configuration
+      TEMPORAL_ADDRESS: temporal-server:7233
+      TEMPORAL_NAMESPACE: default
+      TEMPORAL_TASK_QUEUE: workflow-automation
+      
+      # Worker configuration
+      MAX_CONCURRENT_ACTIVITIES: 20
+      MAX_CONCURRENT_WORKFLOWS: 10
+      WORKER_IDENTITY: temporal-worker-container
+      
+      # Service URLs
+      WORKFLOW_AUTOMATION_URL: http://workflow-automation:8092
+      
+      # Logging
+      LOG_LEVEL: info
+      
+    ports:
+      - "8081:8081"
+    volumes:
+      - worker_logs:/app/logs
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - temporal-network
+
+
+# ============================================================================
+# NETWORKING AND VOLUMES
+# ============================================================================
+
+networks:
+  temporal-network:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.20.0.0/16
+          gateway: 172.20.0.1
+
+volumes:
+  # Database storage
+  postgres_data:
+  
+  # Cache storage
+  redis_data:
+  
+  # Temporal data
+  temporal_data:
+      
+  # Application logs
+  workflow_logs:
+  worker_logs:
+  editor_logs:
+
+# ============================================================================
+# USAGE DOCUMENTATION
+# ============================================================================
+
+# USAGE:
+# ------
+# 1. Start the complete system (8 core containers):
+#    docker-compose up -d --build
+#
+# 2. Build with no cache:
+#    docker-compose build --no-cache
+#    docker-compose up -d
+#
+# 3. Check system health:
+#    docker-compose ps
+#    docker-compose logs --tail=100
+#
+# 4. Stop all containers:
+#    docker-compose down
+#
+# 5. Clean rebuild:
+#    docker-compose down -v && docker-compose build --no-cache && docker-compose up -d
+#
+# ACCESS POINTS:
+# -------------
+# Core Production Services (8 containers):
+# - Enhanced Workflow Editor API: http://localhost:3001 (Professional workflow management)
+# - Drag-and-Drop Workflow Editor: http://localhost:3004 (Visual workflow designer)
+# - Workflow Automation API: http://localhost:8092 (Main API and workflow generation)
+# - Temporal Worker API: http://localhost:8081 (Workflow execution engine)
+# - Temporal Web UI: http://localhost:8233 (Temporal management interface)
+# - PostgreSQL Database: localhost:5432 (temporal-postgres container)
+# - Redis Cache: localhost:6379 (temporal-redis container)
+# - Temporal Server: localhost:7233 (temporal-server container)
+#
+# WORKFLOW AUTOMATION API ENDPOINTS:
+# ----------------------------------
+# - POST /api/workflows/generate - Create simple workflow
+# - POST /api/workflows/generate-iterative - Create complex workflow
+# - GET /api/executions/:id - Check workflow status
+# - GET /api/workflows/templates - List available templates
+#
+# DEMONSTRATION WORKFLOW REQUESTS:
+# --------------------------------
+# 1. Simple multiply numbers workflow:
+#    POST /api/workflows/generate
+#    {"requirements": "Create a workflow that multiplies two numbers and validates the result"}
+#
+# 2. Complex Google webhook workflow:
+#    POST /api/workflows/generate-iterative 
+#    {"requirements": "Create a workflow that sends data to Google webhook with retry logic and error handling"}
+#
+# 3. Advanced GitLab MCP integration:
+#    POST /api/workflows/generate-iterative
+#    {"requirements": "Create a workflow that integrates with GitLab MCP server for repository management and CI/CD operations"}

@@ -1,0 +1,6 @@
+email,name,company,role,signup_date,dashboard_url
+john.doe@example.com,John Doe,Acme Corp,Developer,2024-01-15,https://app.example.com/dashboard
+jane.smith@techco.com,Jane Smith,TechCo,Manager,2024-01-16,https://app.example.com/dashboard
+bob.wilson@startup.io,Bob Wilson,StartupIO,CTO,2024-01-17,https://app.example.com/dashboard
+alice.brown@enterprise.com,Alice Brown,Enterprise Inc,Director,2024-01-18,https://app.example.com/dashboard
+charlie.davis@agency.net,Charlie Davis,Creative Agency,Designer,2024-01-19,https://app.example.com/dashboard
