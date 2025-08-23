@@ -1,0 +1,60 @@
+# Temporal dynamic configuration for development with SQL persistence
+# Compatible with Temporal Server v1.28.1
+
+# Frontend service configuration
+frontend.enableUpdateWorkflowExecution:
+  - value: true
+
+# History service configuration  
+history.enableTaskMerge:
+  - value: true
+
+history.defaultActivityRetryPolicy:
+  - value:
+      InitialIntervalInSeconds: 1
+      MaximumIntervalInSeconds: 100
+      BackoffCoefficient: 2.0
+      MaximumAttempts: 0
+
+history.defaultWorkflowRetryPolicy:
+  - value:
+      InitialIntervalInSeconds: 1
+      MaximumIntervalInSeconds: 100
+      BackoffCoefficient: 2.0
+      MaximumAttempts: 0
+
+# Matching service configuration
+matching.enableTaskMerge:
+  - value: true
+
+# Worker service configuration
+worker.enableRingpopTLS:
+  - value: false
+
+# System configuration
+system.enableAuthorization:
+  - value: false
+
+system.enableCrossNamespaceCommands:
+  - value: true
+
+# Archival configuration (disabled for development)
+system.enableArchival:
+  - value: false
+
+# Limits configuration
+limit.maxIDLength:
+  - value: 1000
+
+limit.blobSizeLimitError:
+  - value: 2097152  # 2MB
+
+limit.blobSizeLimitWarn:
+  - value: 1048576  # 1MB
+
+# Persistence configuration for PostgreSQL
+persistence.defaultStore:
+  - value: "default"
+
+persistence.visibilityStore:
+  - value: "visibility"

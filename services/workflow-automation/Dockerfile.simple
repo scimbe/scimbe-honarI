@@ -1,0 +1,50 @@
+# Simple Workflow Automation Service Dockerfile
+FROM node:18-alpine
+
+WORKDIR /app
+
+# Install system dependencies
+RUN apk add --no-cache curl tini
+
+# Copy package files
+COPY package*.json ./
+COPY tsconfig.json ./
+
+# Install dependencies including dev dependencies for TypeScript compilation
+RUN npm install
+
+# Copy source code and minimal server
+COPY src/ ./src/
+COPY minimal-server.js ./
+
+# Build TypeScript if build script exists, otherwise use tsx
+RUN npm run build 2>/dev/null || echo "No build script found, will use tsx at runtime"
+
+# Create app user for security
+RUN addgroup -g 1001 -S automation && \
+    adduser -S automation -u 1001 -G automation
+
+# Create logs directory and set permissions
+RUN mkdir -p /app/logs && chown -R automation:automation /app
+
+# Switch to non-root user
+USER automation
+
+# Expose port
+EXPOSE 8092
+
+# Add health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:8092/health || exit 1
+
+# Use tini as entrypoint for proper signal handling
+ENTRYPOINT ["/sbin/tini", "--"]
+
+# Start the minimal service
+CMD ["node", "minimal-server.js"]
+
+# Labels for metadata
+LABEL maintainer="platform-team@company.com"
+LABEL service="workflow-automation"
+LABEL version="1.0.0"
+LABEL description="Workflow Automation Service - AI-powered workflow generation with testing and refinement"

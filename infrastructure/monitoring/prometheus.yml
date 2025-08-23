@@ -1,0 +1,108 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: 'temporal-ai-platform'
+    environment: 'development'
+
+rule_files:
+  - "alert_rules/*.yml"
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+          - alertmanager:9093
+
+scrape_configs:
+  # ==========================================
+  # INFRASTRUCTURE MONITORING
+  # ==========================================
+  
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+    
+  - job_name: 'temporal'
+    static_configs:
+      - targets: ['temporal:7233']
+    metrics_path: /metrics
+    scrape_interval: 5s
+
+  - job_name: 'postgres'
+    static_configs:
+      - targets: ['postgres:5432']
+    
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['redis:6379']
+
+  # ==========================================
+  # PLATFORM SERVICES MONITORING
+  # ==========================================
+  
+  - job_name: 'ai-gateway'
+    static_configs:
+      - targets: ['ai-gateway:8090']
+    metrics_path: /ai-gateway/metrics
+    scrape_interval: 10s
+    
+  - job_name: 'temporal-worker'
+    static_configs:
+      - targets: ['temporal-worker:8081']
+    metrics_path: /temporal-worker/metrics
+    scrape_interval: 10s
+    
+  - job_name: 'mcp-server'
+    static_configs:
+      - targets: ['mcp-server:8091']
+    metrics_path: /mcp-server/metrics
+    scrape_interval: 10s
+    
+  - job_name: 'workflow-automation'
+    static_configs:
+      - targets: ['workflow-automation:8092']
+    metrics_path: /workflow-automation/metrics
+    scrape_interval: 10s
+    
+  - job_name: 'web-editor'
+    static_configs:
+      - targets: ['web-editor:3001']
+    metrics_path: /web-editor/metrics
+    scrape_interval: 10s
+    
+  - job_name: 'health-monitor'
+    static_configs:
+      - targets: ['health-monitor:8888']
+    metrics_path: /health-monitor/metrics
+    scrape_interval: 5s
+    
+  - job_name: 'demo-portal'
+    static_configs:
+      - targets: ['demo-portal:8099']
+    metrics_path: /demo-portal/metrics
+    scrape_interval: 15s
+    
+  - job_name: 'plugin-system'
+    static_configs:
+      - targets: ['plugin-system:8094']
+    metrics_path: /metrics
+    scrape_interval: 10s
+
+  # ==========================================
+  # MLOPS MONITORING
+  # ==========================================
+  
+  - job_name: 'mlflow'
+    static_configs:
+      - targets: ['mlflow:5000']
+    metrics_path: /metrics
+    scrape_interval: 30s
+
+  # ==========================================
+  # NODE EXPORTER (for system metrics)
+  # ==========================================
+  
+  - job_name: 'node-exporter'
+    static_configs:
+      - targets: ['node-exporter:9100']

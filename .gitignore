@@ -1,0 +1,116 @@
+# Dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+
+# Build outputs
+dist/
+build/
+.next/
+out/
+
+# Runtime data
+logs/
+*.log
+pids/
+*.pid
+*.seed
+*.pid.lock
+data/
+memory/
+
+# Cache directories
+.npm/
+.cache/
+.rpt2_cache/
+.eslintcache
+.nyc_output
+
+# Environment variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Docker
+.dockerignore
+
+# Claude Code
+.claude/
+.claude-flow/
+.roo/
+.roomodes
+
+# Legacy and test files (exclude from production)
+archive/
+execute-*.js
+test-*.js
+final-*.js
+create-*.js
+functional-*.js
+improved-*.js
+trigger-*.js
+run-*.js
+fix-*.js
+*-workflow-executor.js
+*execution_report.json
+*workflow_execution_results.json
+workflow_nodes_full.md
+production-log.txt
+temporal_execution_report.json
+FINAL_ASSESSMENT.md
+requirements.txt
+execute-via-cli.sh
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/

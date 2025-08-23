@@ -1,0 +1,29 @@
+{
+  "name": "temporal-workflow-platform",
+  "version": "1.0.0",
+  "description": "Revolutionary Dynamic Workflow Platform",
+  "main": "execute-workflows.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "execute": "node execute-workflows.js"
+  },
+  "keywords": [
+    "temporal",
+    "workflow",
+    "automation"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@temporalio/activity": "^1.12.3",
+    "@temporalio/client": "^1.12.3",
+    "@temporalio/worker": "^1.12.3",
+    "@temporalio/workflow": "^1.12.3",
+    "axios": "^1.11.0",
+    "ioredis": "^5.7.0",
+    "node-fetch": "^2.7.0",
+    "pg": "^8.16.3",
+    "playwright": "^1.54.2",
+    "redis": "^5.8.2"
+  }
+}

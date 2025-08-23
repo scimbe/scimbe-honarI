@@ -1,0 +1,56 @@
+version: '3.8'
+
+services:
+  # Temporal server
+  temporal:
+    image: temporalio/auto-setup:latest
+    ports:
+      - "7233:7233"   # gRPC
+      - "8080:8080"   # Web UI
+    environment:
+      - DB=postgres12
+      - DB_PORT=5432
+      - POSTGRES_USER=temporal
+      - POSTGRES_PWD=temporal
+      - POSTGRES_SEEDS=postgresql
+      - DYNAMIC_CONFIG_FILE_PATH=/etc/temporal/config/dynamicconfig/development.yaml
+    volumes:
+      - ./temporal-config:/etc/temporal/config/dynamicconfig
+    depends_on:
+      - postgresql
+    networks:
+      - temporal-net
+
+  # PostgreSQL for Temporal
+  postgresql:
+    image: postgres:13
+    environment:
+      POSTGRES_USER: temporal
+      POSTGRES_PASSWORD: temporal
+      POSTGRES_DB: temporal
+    ports:
+      - "5432:5432"
+    volumes:
+      - temporal_postgres_data:/var/lib/postgresql/data
+    networks:
+      - temporal-net
+
+  # Temporal Web UI (explicit service)
+  temporal-web:
+    image: temporalio/web:latest
+    ports:
+      - "8088:8088"
+    environment:
+      - TEMPORAL_GRPC_ENDPOINT=temporal:7233
+      - TEMPORAL_PERMIT_WRITE_API=true
+    depends_on:
+      - temporal
+    networks:
+      - temporal-net
+
+volumes:
+  temporal_postgres_data:
+
+networks:
+  temporal-net:
+    driver: bridge

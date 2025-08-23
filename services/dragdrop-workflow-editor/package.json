@@ -1,0 +1,16 @@
+{
+  "name": "dragdrop-workflow-editor",
+  "version": "1.0.0",
+  "description": "Enhanced drag-and-drop workflow editor with PostgreSQL integration",
+  "main": "server.py",
+  "scripts": {
+    "start": "python server.py",
+    "dev": "python server.py",
+    "test": "echo \"No tests defined\""
+  },
+  "dependencies": {
+    "psycopg2-binary": "^2.9.9"
+  },
+  "author": "Claude Code",
+  "license": "MIT"
+}

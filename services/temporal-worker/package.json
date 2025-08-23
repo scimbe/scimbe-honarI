@@ -1,0 +1,48 @@
+{
+  "name": "@platform/temporal-worker",
+  "version": "2.0.0",
+  "description": "Temporal Worker Service - Workflow and activity execution",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "test": "jest",
+    "lint": "eslint src --ext .ts,.tsx",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@temporalio/worker": "^1.8.0",
+    "@temporalio/workflow": "^1.8.0",
+    "@temporalio/activity": "^1.8.0",
+    "@temporalio/common": "^1.8.0",
+    "fastify": "^4.24.3",
+    "axios": "^1.6.0",
+    "form-data": "^4.0.0",
+    "sharp": "^0.32.6",
+    "pdf-parse": "^1.1.1",
+    "csvtojson": "^2.0.10",
+    "uuid": "^9.0.1",
+    "ioredis": "^5.3.2",
+    "pg": "^8.11.3"
+  },
+  "devDependencies": {
+    "@types/node": "^20.8.10",
+    "@types/uuid": "^9.0.6",
+    "@types/pg": "^8.10.7",
+    "typescript": "^5.2.2",
+    "tsx": "^4.1.4",
+    "jest": "^29.7.0",
+    "@types/jest": "^29.5.8"
+  },
+  "keywords": [
+    "temporal",
+    "worker",
+    "workflow",
+    "orchestration",
+    "ai",
+    "automation"
+  ],
+  "author": "Platform Development Team",
+  "license": "MIT"
+}

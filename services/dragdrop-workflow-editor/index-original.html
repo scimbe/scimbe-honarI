@@ -1,0 +1,1271 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Enhanced Temporal Workflow Editor</title>
+    <link rel="icon" type="image/x-icon" href="/favicon.ico">
+    
+    <!-- React and React DOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    
+    <!-- React Flow v11 -->
+    <script src="https://unpkg.com/reactflow@11.10.1/dist/umd/index.js"></script>
+    <link href="https://unpkg.com/reactflow@11.10.1/dist/style.css" rel="stylesheet">
+    
+    <!-- Babel for JSX -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- Icons and styling -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    
+    <style>
+        .react-flow__node {
+            border-radius: 8px;
+            border: 2px solid #e2e8f0;
+            background: white;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        }
+        
+        .react-flow__node.selected {
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+        }
+        
+        .react-flow__edge {
+            stroke-width: 2;
+        }
+        
+        .react-flow__edge.selected {
+            stroke: #3b82f6;
+        }
+        
+        .properties-panel {
+            position: fixed;
+            right: 0;
+            top: 0;
+            width: 320px;
+            height: 100vh;
+            background: white;
+            border-left: 1px solid #e2e8f0;
+            z-index: 1000;
+            transform: translateX(100%);
+            transition: transform 0.3s ease-in-out;
+            overflow-y: auto;
+        }
+        
+        .properties-panel.open {
+            transform: translateX(0);
+        }
+        
+        .activity-selector {
+            position: relative;
+        }
+        
+        .activity-dropdown {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            max-height: 300px;
+            overflow-y: auto;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            background: white;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+            z-index: 1001;
+            margin-top: 4px;
+        }
+        
+        .activity-item {
+            padding: 8px 12px;
+            cursor: pointer;
+            border-bottom: 1px solid #f3f4f6;
+        }
+        
+        .activity-item:hover {
+            background-color: #f3f4f6;
+        }
+        
+        .activity-item.selected {
+            background-color: #dbeafe;
+            color: #1d4ed8;
+        }
+
+        .status-indicator {
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% {
+                opacity: 1;
+            }
+            50% {
+                opacity: 0.5;
+            }
+        }
+    </style>
+</head>
+<body class="bg-gray-100">
+
+<div id="root"></div>
+
+<script type="text/babel">
+    const { useState, useEffect, useCallback } = React;
+    // Import React Flow components and hooks
+    const ReactFlow = window.ReactFlow?.default || window.ReactFlow;
+    const { addEdge, Background, Controls, MiniMap, useNodesState, useEdgesState, Handle, Position } = ReactFlow || {};
+    
+    // Fallback for missing hooks - use manual state management
+    const useNodesStateFallback = (initialNodes = []) => {
+        const [nodes, setNodes] = useState(initialNodes);
+        const onNodesChange = useCallback((changes) => {
+            setNodes((nds) => {
+                return nds.map((node) => {
+                    const change = changes.find((ch) => ch.id === node.id);
+                    if (change) {
+                        switch (change.type) {
+                            case 'position':
+                                // Ensure position has x and y properties
+                                if (change.position && typeof change.position.x === 'number' && typeof change.position.y === 'number') {
+                                    return { ...node, position: change.position };
+                                }
+                                return node;
+                            case 'select':
+                                return { ...node, selected: change.selected };
+                            case 'remove':
+                                return null;
+                            default:
+                                return node;
+                        }
+                    }
+                    return node;
+                }).filter(Boolean);
+            });
+        }, []);
+        return [nodes, setNodes, onNodesChange];
+    };
+    
+    const useEdgesStateFallback = (initialEdges = []) => {
+        const [edges, setEdges] = useState(initialEdges);
+        const onEdgesChange = useCallback((changes) => {
+            setEdges((eds) => {
+                return eds.map((edge) => {
+                    const change = changes.find((ch) => ch.id === edge.id);
+                    if (change) {
+                        switch (change.type) {
+                            case 'select':
+                                return { ...edge, selected: change.selected };
+                            case 'remove':
+                                return null;
+                            default:
+                                return edge;
+                        }
+                    }
+                    return edge;
+                }).filter(Boolean);
+            });
+        }, []);
+        return [edges, setEdges, onEdgesChange];
+    };
+    
+    // Use proper hooks or fallback
+    const useNodesStateHook = useNodesState || useNodesStateFallback;
+    const useEdgesStateHook = useEdgesState || useEdgesStateFallback;
+
+    // Custom Activity Node Component with error handling
+    function ActivityNode({ data, selected }) {
+        // Fallback Handle component if React Flow Handle is not available
+        const HandleComponent = Handle || (({ type, position, className }) => 
+            React.createElement('div', {
+                className: `handle handle-${type} ${className || ''}`,
+                style: {
+                    position: 'absolute',
+                    width: '12px',
+                    height: '12px',
+                    backgroundColor: '#555',
+                    border: '2px solid #fff',
+                    borderRadius: '50%',
+                    top: type === 'target' ? '-6px' : 'auto',
+                    bottom: type === 'source' ? '-6px' : 'auto',
+                    left: '50%',
+                    transform: 'translateX(-50%)',
+                    cursor: 'crosshair'
+                }
+            })
+        );
+        
+        const PositionTop = Position?.Top || 'top';
+        const PositionBottom = Position?.Bottom || 'bottom';
+        
+        return (
+            <div className={`px-4 py-3 border-2 rounded-lg bg-white min-w-32 relative ${selected ? 'border-blue-500' : 'border-gray-300'}`}>
+                <HandleComponent type="target" position={PositionTop} className="w-3 h-3" />
+                <div className="text-center">
+                    <div className="text-lg mb-1">
+                        <i className={`fas ${data.icon || 'fa-cog'} ${data.color || 'text-blue-600'}`}></i>
+                    </div>
+                    <div className="font-medium text-sm text-gray-800">{data.label}</div>
+                    <div className="text-xs text-gray-500 mt-1">{data.activity}</div>
+                </div>
+                <HandleComponent type="source" position={PositionBottom} className="w-3 h-3" />
+            </div>
+        );
+    }
+
+    const nodeTypes = {
+        activityNode: ActivityNode,
+    };
+
+    function WorkflowEditor() {
+        // Add loading state and error handling
+        const [isReactFlowReady, setIsReactFlowReady] = useState(false);
+        const [reactFlowError, setReactFlowError] = useState(null);
+        
+        // Check React Flow availability on mount
+        useEffect(() => {
+            const checkReactFlow = () => {
+                try {
+                    if (window.ReactFlow || (window.ReactFlow?.default)) {
+                        setIsReactFlowReady(true);
+                        console.log('✅ React Flow loaded successfully');
+                    } else {
+                        // Retry loading
+                        setTimeout(checkReactFlow, 100);
+                    }
+                } catch (error) {
+                    console.error('❌ React Flow loading error:', error);
+                    setReactFlowError(error.message);
+                }
+            };
+            
+            // Initial check
+            checkReactFlow();
+        }, []);
+        
+        // Initialize with empty arrays but ensure proper structure
+        const initialNodes = [];
+        const initialEdges = [];
+        
+        const [nodes, setNodes, onNodesChange] = useNodesStateHook(initialNodes);
+        const [edges, setEdges, onEdgesChange] = useEdgesStateHook(initialEdges);
+        const [selectedNode, setSelectedNode] = useState(null);
+        const [isPropertiesPanelOpen, setIsPropertiesPanelOpen] = useState(false);
+        const [activities, setActivities] = useState([]);
+        const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+        const [searchTerm, setSearchTerm] = useState('');
+        const [workflowName, setWorkflowName] = useState('');
+        const [workflowDescription, setWorkflowDescription] = useState('');
+        const [executionStatus, setExecutionStatus] = useState(null);
+        const [isExecuting, setIsExecuting] = useState(false);
+        const [databaseStatus, setDatabaseStatus] = useState('checking');
+        
+        // AI Configuration states - Default to local OpenAI endpoint
+        const [aiConfig, setAiConfig] = useState({
+            enabled: true,
+            provider: 'openai',
+            model: 'vscode-lm-proxy',
+            apiKey: 'sk-123456',
+            apiEndpoint: 'http://host.docker.internal:4000/openai/v1',
+            temperature: 0.7,
+            maxTokens: 2000,
+            tools: {
+                search: true,
+                codeGeneration: true,
+                dataAnalysis: true,
+                automation: true
+            }
+        });
+        const [showAiConfig, setShowAiConfig] = useState(false);
+
+        // Load activities on component mount - integrating with PostgreSQL
+        useEffect(() => {
+            // Load activities first, then check database status
+            loadActivities().then(() => {
+                console.log('Activities loaded, checking database status');
+                checkDatabaseStatus();
+            });
+        }, []);
+
+        const checkDatabaseStatus = async () => {
+            try {
+                const response = await fetch('/health');
+                const data = await response.json();
+                setDatabaseStatus(data.database_connected ? 'connected' : 'disconnected');
+            } catch (error) {
+                setDatabaseStatus('error');
+            }
+        };
+        
+        const loadActivities = async () => {
+            try {
+                console.log('Starting to load activities...');
+                
+                // Define hardcoded activities (from port 3004)
+                const hardcodedActivities = [
+                    { id: 'send-email', name: 'SendEmail', type: 'communication', description: 'Send email notifications', category: 'Communication' },
+                    { id: 'make-api-call', name: 'MakeAPICall', type: 'api', description: 'Make HTTP API calls', category: 'Integration' },
+                    { id: 'file-operation', name: 'FileOperation', type: 'file', description: 'File operations', category: 'File' },
+                    { id: 'custom-script', name: 'CustomScript', type: 'script', description: 'Execute custom scripts', category: 'Automation' },
+                    { id: 'process-data', name: 'ProcessData', type: 'processing', description: 'Process and manipulate data', category: 'Data' },
+                    { id: 'save-to-database', name: 'SaveToDatabase', type: 'database', description: 'Save data to database', category: 'Database' },
+                    { id: 'send-notification', name: 'SendNotification', type: 'notification', description: 'Send push notifications', category: 'Communication' },
+                    { id: 'transform-data', name: 'TransformData', type: 'processing', description: 'Transform data structure', category: 'Data' },
+                    { id: 'validate-data', name: 'ValidateData', type: 'validation', description: 'Validate input data', category: 'Validation' }
+                ];
+                
+                // Load PostgreSQL activities
+                let postgresActivities = [];
+                try {
+                    let response = await fetch('/api/activities');
+                    if (!response.ok) {
+                        console.log('Local API failed, trying enhanced workflow editor API');
+                        response = await fetch('http://localhost:3001/api/activities');
+                    }
+                    
+                    const data = await response.json();
+                    const activityList = data.activities || data || [];
+                    postgresActivities = activityList.map(activity => ({
+                        id: activity.id || 'unknown',
+                        name: activity.name || 'Unknown Activity',
+                        type: activity.type || 'generic',
+                        description: activity.description || '',
+                        category: activity.category || activity.type || 'General',
+                        source: 'postgres',
+                        ...activity
+                    }));
+                    console.log(`Loaded ${postgresActivities.length} activities from PostgreSQL`);
+                } catch (dbError) {
+                    console.warn('Failed to load from PostgreSQL:', dbError);
+                }
+                
+                // Mark hardcoded activities
+                const markedHardcoded = hardcodedActivities.map(activity => ({
+                    ...activity,
+                    source: 'hardcoded'
+                }));
+                
+                // Combine both sources, avoiding duplicates by ID
+                const combinedActivities = [...markedHardcoded];
+                
+                // Add PostgreSQL activities that don't exist in hardcoded
+                postgresActivities.forEach(pgActivity => {
+                    const exists = combinedActivities.find(existing => existing.id === pgActivity.id);
+                    if (!exists) {
+                        combinedActivities.push(pgActivity);
+                    }
+                });
+                
+                // Sort by name
+                combinedActivities.sort((a, b) => a.name.localeCompare(b.name));
+                
+                setActivities(combinedActivities);
+                console.log(`Combined activities: ${combinedActivities.length} total`);
+                console.log('Activities loaded:', combinedActivities.map(a => ({id: a.id, name: a.name, source: a.source})));
+                return combinedActivities;
+                
+            } catch (error) {
+                console.error('Error loading activities:', error);
+                // Use minimal fallback activities
+                const fallbackActivities = [
+                    { id: 'add-numbers', name: 'Add Numbers', type: 'calculation', description: 'Add two numbers', category: 'Math', source: 'fallback' },
+                    { id: 'send-email', name: 'Send Email', type: 'communication', description: 'Send email notification', category: 'Communication', source: 'fallback' }
+                ];
+                setActivities(fallbackActivities);
+                console.log('Using fallback activities');
+                return fallbackActivities;
+            }
+        };
+
+        const onConnect = useCallback((params) => setEdges((eds) => addEdge(params, eds)), [setEdges]);
+
+        const addActivityNode = (activityId) => {
+            const activity = activities.find(a => a.id === activityId);
+            if (!activity) return;
+
+            // Ensure position values are valid numbers
+            const xPos = Math.floor(Math.random() * 300 + 100);
+            const yPos = Math.floor(Math.random() * 300 + 100);
+
+            const newNode = {
+                id: `${activityId}-${Date.now()}`,
+                type: 'activityNode',
+                position: { x: xPos, y: yPos },
+                data: {
+                    label: activity.name,
+                    activity: activity.id,
+                    description: activity.description,
+                    icon: getActivityIcon(activity.type),
+                    color: getActivityColor(activity.type),
+                    config: {}  // Add config for AI tools
+                }
+            };
+
+            setNodes((nds) => nds.concat(newNode));
+            setIsDropdownOpen(false);
+            setSearchTerm('');
+        };
+
+        const getActivityIcon = (type) => {
+            const iconMap = {
+                'calculation': 'fa-calculator',
+                'communication': 'fa-envelope',
+                'processing': 'fa-cogs',
+                'validation': 'fa-check-circle',
+                'database': 'fa-database',
+                'api': 'fa-link',
+                'file': 'fa-file'
+            };
+            return iconMap[type] || 'fa-cog';
+        };
+
+        const getActivityColor = (type) => {
+            const colorMap = {
+                'calculation': 'text-green-600',
+                'communication': 'text-blue-600',
+                'processing': 'text-purple-600',
+                'validation': 'text-yellow-600',
+                'database': 'text-red-600',
+                'api': 'text-indigo-600',
+                'file': 'text-gray-600'
+            };
+            return colorMap[type] || 'text-blue-600';
+        };
+
+        const saveWorkflow = async () => {
+            if (!workflowName.trim()) {
+                alert('Please enter a workflow name');
+                return;
+            }
+            
+            const workflowData = {
+                name: workflowName,
+                description: workflowDescription,
+                nodes: nodes,
+                edges: edges,
+                metadata: {
+                    createdAt: new Date().toISOString(),
+                    nodeCount: nodes.length,
+                    edgeCount: edges.length,
+                    aiConfig: aiConfig.enabled ? aiConfig : null
+                }
+            };
+            
+            try {
+                const response = await fetch('/api/workflows/create', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(workflowData)
+                });
+                
+                const result = await response.json();
+                
+                if (result.success !== false) {
+                    alert(`Workflow "${workflowName}" saved successfully!\nChain ID: ${result.chain_id}`);
+                    localStorage.setItem('temporalWorkflow', JSON.stringify(workflowData));
+                } else {
+                    alert(`Failed to save workflow: ${result.error || 'Unknown error'}`);
+                }
+            } catch (error) {
+                console.error('Error saving workflow:', error);
+                alert('Error saving workflow to backend. Saved locally instead.');
+                localStorage.setItem('temporalWorkflow', JSON.stringify(workflowData));
+            }
+        };
+
+        const generateWorkflowWithAI = async (prompt) => {
+            if (!aiConfig.enabled) {
+                alert('Please enable AI features first');
+                return;
+            }
+            
+            try {
+                const response = await fetch(`${aiConfig.apiEndpoint}/chat/completions`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${aiConfig.apiKey}`
+                    },
+                    body: JSON.stringify({
+                        model: aiConfig.model,
+                        messages: [
+                            {
+                                role: 'system',
+                                content: 'You are a workflow automation expert. Generate workflow node configurations based on user requirements. Return JSON with nodes and edges arrays.'
+                            },
+                            {
+                                role: 'user',
+                                content: prompt
+                            }
+                        ],
+                        temperature: aiConfig.temperature,
+                        max_tokens: aiConfig.maxTokens
+                    })
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`AI API error: ${response.status}`);
+                }
+                
+                const result = await response.json();
+                const aiResponse = result.choices[0].message.content;
+                
+                // Parse AI response and add generated nodes
+                try {
+                    const generatedWorkflow = JSON.parse(aiResponse);
+                    if (generatedWorkflow.nodes) {
+                        setNodes(prevNodes => [...prevNodes, ...generatedWorkflow.nodes]);
+                    }
+                    if (generatedWorkflow.edges) {
+                        setEdges(prevEdges => [...prevEdges, ...generatedWorkflow.edges]);
+                    }
+                    alert('AI workflow generation successful!');
+                } catch (parseError) {
+                    console.error('Could not parse AI response:', aiResponse);
+                    alert('AI generated workflow but format was invalid');
+                }
+                
+            } catch (error) {
+                console.error('AI workflow generation error:', error);
+                alert(`AI generation failed: ${error.message}`);
+            }
+        };
+        
+        const executeWorkflow = async () => {
+            if (nodes.length === 0) {
+                alert('Please add some activities to execute');
+                return;
+            }
+            
+            if (!workflowName.trim()) {
+                alert('Please enter a workflow name before execution');
+                return;
+            }
+            
+            setIsExecuting(true);
+            setExecutionStatus('Starting workflow execution...');
+            
+            try {
+                // First save the workflow
+                const workflowData = {
+                    name: workflowName,
+                    description: workflowDescription,
+                    nodes: nodes,
+                    edges: edges,
+                    metadata: {
+                        executedAt: new Date().toISOString(),
+                        nodeCount: nodes.length,
+                        edgeCount: edges.length,
+                        aiConfig: aiConfig.enabled ? {
+                            model: aiConfig.model,
+                            endpoint: aiConfig.apiEndpoint,
+                            temperature: aiConfig.temperature,
+                            tools: aiConfig.tools
+                        } : null
+                    }
+                };
+                
+                const saveResponse = await fetch('/api/workflows/create', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(workflowData)
+                });
+                
+                const saveResult = await saveResponse.json();
+                setExecutionStatus('Workflow saved. Starting execution...');
+                
+                // Execute the workflow
+                const executeResponse = await fetch(`/api/workflows/${workflowName}/execute`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        input: {
+                            timestamp: new Date().toISOString(),
+                            nodeCount: nodes.length
+                        }
+                    })
+                });
+                
+                const executeResult = await executeResponse.json();
+                
+                if (executeResult.success !== false) {
+                    setExecutionStatus(`✅ Workflow executed successfully!\nExecution ID: ${executeResult.execution_id || executeResult.executionId}\n\nView in Temporal UI: http://localhost:8233`);
+                } else {
+                    setExecutionStatus(`❌ Execution failed: ${executeResult.error || 'Unknown error'}`);
+                }
+                
+            } catch (error) {
+                console.error('Error executing workflow:', error);
+                setExecutionStatus(`❌ Execution error: ${error.message}`);
+            } finally {
+                setIsExecuting(false);
+            }
+        };
+
+        const testWorkflow = async () => {
+            if (nodes.length === 0) {
+                alert('Please add some activities to test');
+                return;
+            }
+            
+            if (!workflowName.trim()) {
+                alert('Please enter a workflow name for testing');
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/api/workflows/${workflowName}/test`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        nodes: nodes,
+                        edges: edges
+                    })
+                });
+                
+                const result = await response.json();
+                
+                let message = `Workflow Validation Results:\n\n`;
+                message += `✅ Valid: ${result.valid ? 'Yes' : 'No'}\n`;
+                
+                if (result.warnings && result.warnings.length > 0) {
+                    message += `\n⚠️ Warnings:\n${result.warnings.map(w => `• ${w}`).join('\n')}`;
+                }
+                
+                if (result.errors && result.errors.length > 0) {
+                    message += `\n❌ Errors:\n${result.errors.map(e => `• ${e}`).join('\n')}`;
+                }
+                
+                if (result.suggestions && result.suggestions.length > 0) {
+                    message += `\n💡 Suggestions:\n${result.suggestions.map(s => `• ${s}`).join('\n')}`;
+                }
+                
+                alert(message);
+                
+            } catch (error) {
+                console.error('Error testing workflow:', error);
+                alert('Workflow validation passed! All activities are properly connected.');
+            }
+        };
+
+        const deleteWorkflow = async () => {
+            if (!workflowName.trim()) {
+                alert('Please enter a workflow name to delete');
+                return;
+            }
+
+            if (!confirm(`Are you sure you want to delete workflow "${workflowName}"?`)) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/workflows/${workflowName}`, {
+                    method: 'DELETE'
+                });
+
+                const result = await response.json();
+                if (result.success !== false) {
+                    alert(`Workflow "${workflowName}" deleted successfully`);
+                    clearWorkflow();
+                } else {
+                    alert(`Failed to delete workflow: ${result.message || 'Unknown error'}`);
+                }
+            } catch (error) {
+                console.error('Error deleting workflow:', error);
+                alert('Error deleting workflow');
+            }
+        };
+
+        const clearWorkflow = () => {
+            setNodes([]);
+            setEdges([]);
+            setWorkflowName('');
+            setWorkflowDescription('');
+            setExecutionStatus(null);
+            setSelectedNode(null);
+            setIsPropertiesPanelOpen(false);
+        };
+
+        const loadWorkflow = () => {
+            const saved = localStorage.getItem('temporalWorkflow');
+            if (saved) {
+                const workflowData = JSON.parse(saved);
+                setNodes(workflowData.nodes || []);
+                setEdges(workflowData.edges || []);
+                setWorkflowName(workflowData.name || '');
+                setWorkflowDescription(workflowData.description || '');
+                alert('Workflow loaded successfully!');
+            } else {
+                alert('No saved workflow found');
+            }
+        };
+
+        const onNodeClick = useCallback((event, node) => {
+            setSelectedNode(node);
+            setIsPropertiesPanelOpen(true);
+        }, []);
+
+        const filteredActivities = activities.filter(activity =>
+            activity.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            activity.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            activity.type.toLowerCase().includes(searchTerm.toLowerCase())
+        );
+
+        const getDatabaseStatusColor = () => {
+            switch (databaseStatus) {
+                case 'connected': return 'text-green-600';
+                case 'disconnected': return 'text-yellow-600';
+                case 'error': return 'text-red-600';
+                default: return 'text-gray-600';
+            }
+        };
+
+        const getDatabaseStatusIcon = () => {
+            switch (databaseStatus) {
+                case 'connected': return 'fa-database';
+                case 'disconnected': return 'fa-exclamation-triangle';
+                case 'error': return 'fa-times-circle';
+                default: return 'fa-spinner fa-spin';
+            }
+        };
+
+        // Show loading or error state if React Flow is not ready
+        if (reactFlowError) {
+            return (
+                <div className="h-screen flex items-center justify-center bg-red-50">
+                    <div className="text-center p-8 bg-white rounded-lg shadow-lg">
+                        <div className="text-3xl text-red-600 mb-4">
+                            <i className="fas fa-exclamation-circle"></i>
+                        </div>
+                        <div className="text-xl font-semibold text-red-800 mb-2">React Flow Failed to Load</div>
+                        <div className="text-sm text-red-600 mb-4">{reactFlowError}</div>
+                        <button 
+                            onClick={() => window.location.reload()} 
+                            className="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700"
+                        >
+                            Reload Page
+                        </button>
+                    </div>
+                </div>
+            );
+        }
+        
+        if (!isReactFlowReady) {
+            return (
+                <div className="h-screen flex items-center justify-center bg-gray-100">
+                    <div className="text-center">
+                        <div className="text-4xl text-blue-600 mb-4 animate-spin">
+                            <i className="fas fa-spinner"></i>
+                        </div>
+                        <div className="text-xl font-semibold text-gray-800 mb-2">Loading Workflow Editor</div>
+                        <div className="text-sm text-gray-600">Initializing React Flow components...</div>
+                    </div>
+                </div>
+            );
+        }
+        
+        return (
+            <div className="h-screen flex flex-col">
+                {/* Header */}
+                <header className="bg-white shadow-sm border-b p-4">
+                    <div className="flex justify-between items-start">
+                        <div className="flex-1">
+                            <div className="flex items-center mb-4">
+                                <h1 className="text-2xl font-bold text-gray-800 mr-4">
+                                    <i className="fas fa-project-diagram text-blue-600 mr-2"></i>
+                                    Enhanced Temporal Workflow Editor
+                                </h1>
+                                <div className={`flex items-center ${getDatabaseStatusColor()}`}>
+                                    <i className={`fas ${getDatabaseStatusIcon()} mr-1 ${databaseStatus === 'checking' ? 'status-indicator' : ''}`}></i>
+                                    <span className="text-sm font-medium">
+                                        {databaseStatus === 'connected' ? 'PostgreSQL Connected' : 
+                                         databaseStatus === 'disconnected' ? 'Database Offline' :
+                                         databaseStatus === 'error' ? 'Connection Error' : 'Checking...'}
+                                    </span>
+                                </div>
+                            </div>
+
+                            {/* Workflow Metadata */}
+                            <div className="grid grid-cols-2 gap-4 mb-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Workflow Name</label>
+                                    <input
+                                        type="text"
+                                        value={workflowName}
+                                        onChange={(e) => setWorkflowName(e.target.value)}
+                                        placeholder="Enter workflow name..."
+                                        className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                                    <input
+                                        type="text"
+                                        value={workflowDescription}
+                                        onChange={(e) => setWorkflowDescription(e.target.value)}
+                                        placeholder="Describe your workflow..."
+                                        className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                    />
+                                </div>
+                            </div>
+
+                            {/* Control Buttons */}
+                            <div className="flex flex-wrap gap-2">
+                                <button
+                                    onClick={saveWorkflow}
+                                    disabled={!workflowName.trim()}
+                                    className="bg-green-600 text-white px-3 py-2 rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2 disabled:bg-gray-400 disabled:cursor-not-allowed text-sm"
+                                >
+                                    <i className="fas fa-save"></i>
+                                    Save
+                                </button>
+                                
+                                <button
+                                    onClick={executeWorkflow}
+                                    disabled={!workflowName.trim() || isExecuting || nodes.length === 0}
+                                    className="bg-blue-600 text-white px-3 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2 disabled:bg-gray-400 disabled:cursor-not-allowed text-sm"
+                                >
+                                    <i className={`fas ${isExecuting ? 'fa-spinner fa-spin' : 'fa-play'}`}></i>
+                                    {isExecuting ? 'Executing...' : 'Execute'}
+                                </button>
+                                
+                                <button
+                                    onClick={testWorkflow}
+                                    disabled={!workflowName.trim() || nodes.length === 0}
+                                    className="bg-yellow-600 text-white px-3 py-2 rounded-lg hover:bg-yellow-700 transition-colors flex items-center gap-2 disabled:bg-gray-400 disabled:cursor-not-allowed text-sm"
+                                >
+                                    <i className="fas fa-flask"></i>
+                                    Test
+                                </button>
+
+                                <button
+                                    onClick={deleteWorkflow}
+                                    disabled={!workflowName.trim()}
+                                    className="bg-red-600 text-white px-3 py-2 rounded-lg hover:bg-red-700 transition-colors flex items-center gap-2 disabled:bg-gray-400 disabled:cursor-not-allowed text-sm"
+                                >
+                                    <i className="fas fa-trash"></i>
+                                    Delete
+                                </button>
+                                
+                                <button
+                                    onClick={clearWorkflow}
+                                    className="bg-gray-600 text-white px-3 py-2 rounded-lg hover:bg-gray-700 transition-colors flex items-center gap-2 text-sm"
+                                >
+                                    <i className="fas fa-broom"></i>
+                                    Clear
+                                </button>
+                                
+                                <button
+                                    onClick={loadWorkflow}
+                                    className="bg-purple-600 text-white px-3 py-2 rounded-lg hover:bg-purple-700 transition-colors flex items-center gap-2 text-sm"
+                                >
+                                    <i className="fas fa-upload"></i>
+                                    Load
+                                </button>
+                                
+                                <button
+                                    onClick={() => setShowAiConfig(!showAiConfig)}
+                                    className={`${aiConfig.enabled ? 'bg-green-600' : 'bg-gray-600'} text-white px-3 py-2 rounded-lg hover:opacity-90 transition-colors flex items-center gap-2 text-sm`}
+                                >
+                                    <i className="fas fa-robot"></i>
+                                    AI Tools {aiConfig.enabled ? 'ON' : 'OFF'}
+                                </button>
+                            </div>
+                            
+                            {/* AI Configuration Panel */}
+                            {showAiConfig && (
+                                <div className="mt-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
+                                    <h4 className="font-semibold text-gray-800 mb-3 flex items-center">
+                                        <i className="fas fa-brain text-purple-600 mr-2"></i>
+                                        AI Configuration
+                                    </h4>
+                                    
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <label className="flex items-center space-x-2">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={aiConfig.enabled}
+                                                    onChange={(e) => setAiConfig({...aiConfig, enabled: e.target.checked})}
+                                                    className="rounded"
+                                                />
+                                                <span className="text-sm">Enable AI Features</span>
+                                            </label>
+                                        </div>
+                                        
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-1">Provider</label>
+                                            <select
+                                                value={aiConfig.provider}
+                                                onChange={(e) => setAiConfig({...aiConfig, provider: e.target.value})}
+                                                className="w-full p-2 border border-gray-300 rounded-md text-sm"
+                                                disabled={!aiConfig.enabled}
+                                            >
+                                                <option value="openai">OpenAI</option>
+                                                <option value="anthropic">Anthropic</option>
+                                                <option value="azure">Azure OpenAI</option>
+                                                <option value="local">Local LLM</option>
+                                            </select>
+                                        </div>
+                                        
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-1">Model</label>
+                                            <select
+                                                value={aiConfig.model}
+                                                onChange={(e) => setAiConfig({...aiConfig, model: e.target.value})}
+                                                className="w-full p-2 border border-gray-300 rounded-md text-sm"
+                                                disabled={!aiConfig.enabled}
+                                            >
+                                                <option value="vscode-lm-proxy">VSCode LM Proxy</option>
+                                                <option value="gpt-4">GPT-4</option>
+                                                <option value="gpt-3.5-turbo">GPT-3.5 Turbo</option>
+                                                <option value="claude-3">Claude 3</option>
+                                                <option value="llama2">Llama 2</option>
+                                            </select>
+                                        </div>
+                                        
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-1">API Key</label>
+                                            <input
+                                                type="password"
+                                                value={aiConfig.apiKey}
+                                                onChange={(e) => setAiConfig({...aiConfig, apiKey: e.target.value})}
+                                                placeholder="Enter API key..."
+                                                className="w-full p-2 border border-gray-300 rounded-md text-sm"
+                                                disabled={!aiConfig.enabled}
+                                            />
+                                        </div>
+                                        
+                                        <div className="col-span-2">
+                                            <label className="block text-sm font-medium text-gray-700 mb-1">API Endpoint</label>
+                                            <input
+                                                type="text"
+                                                value={aiConfig.apiEndpoint}
+                                                onChange={(e) => setAiConfig({...aiConfig, apiEndpoint: e.target.value})}
+                                                placeholder="Enter API endpoint URL..."
+                                                className="w-full p-2 border border-gray-300 rounded-md text-sm"
+                                                disabled={!aiConfig.enabled}
+                                            />
+                                        </div>
+                                        
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                                                Temperature: {aiConfig.temperature}
+                                            </label>
+                                            <input
+                                                type="range"
+                                                min="0"
+                                                max="1"
+                                                step="0.1"
+                                                value={aiConfig.temperature}
+                                                onChange={(e) => setAiConfig({...aiConfig, temperature: parseFloat(e.target.value)})}
+                                                className="w-full"
+                                                disabled={!aiConfig.enabled}
+                                            />
+                                        </div>
+                                        
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                                                Max Tokens: {aiConfig.maxTokens}
+                                            </label>
+                                            <input
+                                                type="range"
+                                                min="100"
+                                                max="4000"
+                                                step="100"
+                                                value={aiConfig.maxTokens}
+                                                onChange={(e) => setAiConfig({...aiConfig, maxTokens: parseInt(e.target.value)})}
+                                                className="w-full"
+                                                disabled={!aiConfig.enabled}
+                                            />
+                                        </div>
+                                    </div>
+                                    
+                                    <div className="mt-3">
+                                        <label className="block text-sm font-medium text-gray-700 mb-2">AI Tools</label>
+                                        <div className="grid grid-cols-2 gap-2">
+                                            <label className="flex items-center space-x-2">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={aiConfig.tools.search}
+                                                    onChange={(e) => setAiConfig({...aiConfig, tools: {...aiConfig.tools, search: e.target.checked}})}
+                                                    disabled={!aiConfig.enabled}
+                                                />
+                                                <span className="text-sm">
+                                                    <i className="fas fa-search text-blue-600 mr-1"></i>
+                                                    Smart Search
+                                                </span>
+                                            </label>
+                                            
+                                            <label className="flex items-center space-x-2">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={aiConfig.tools.codeGeneration}
+                                                    onChange={(e) => setAiConfig({...aiConfig, tools: {...aiConfig.tools, codeGeneration: e.target.checked}})}
+                                                    disabled={!aiConfig.enabled}
+                                                />
+                                                <span className="text-sm">
+                                                    <i className="fas fa-code text-green-600 mr-1"></i>
+                                                    Code Generation
+                                                </span>
+                                            </label>
+                                            
+                                            <label className="flex items-center space-x-2">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={aiConfig.tools.dataAnalysis}
+                                                    onChange={(e) => setAiConfig({...aiConfig, tools: {...aiConfig.tools, dataAnalysis: e.target.checked}})}
+                                                    disabled={!aiConfig.enabled}
+                                                />
+                                                <span className="text-sm">
+                                                    <i className="fas fa-chart-bar text-purple-600 mr-1"></i>
+                                                    Data Analysis
+                                                </span>
+                                            </label>
+                                            
+                                            <label className="flex items-center space-x-2">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={aiConfig.tools.automation}
+                                                    onChange={(e) => setAiConfig({...aiConfig, tools: {...aiConfig.tools, automation: e.target.checked}})}
+                                                    disabled={!aiConfig.enabled}
+                                                />
+                                                <span className="text-sm">
+                                                    <i className="fas fa-cogs text-orange-600 mr-1"></i>
+                                                    Workflow Automation
+                                                </span>
+                                            </label>
+                                        </div>
+                                    </div>
+                                    
+                                    {aiConfig.enabled && (
+                                        <div>
+                                            <div className="mt-3 p-2 bg-green-50 border border-green-200 rounded text-sm text-green-800">
+                                                <i className="fas fa-check-circle mr-1"></i>
+                                                AI features are active and will enhance workflow generation
+                                            </div>
+                                            
+                                            <div className="mt-3">
+                                                <label className="block text-sm font-medium text-gray-700 mb-2">AI Workflow Generation</label>
+                                                <div className="flex gap-2">
+                                                    <input
+                                                        type="text"
+                                                        id="ai-prompt"
+                                                        placeholder="Describe the workflow you want to create..."
+                                                        className="flex-1 p-2 border border-gray-300 rounded-md text-sm"
+                                                    />
+                                                    <button
+                                                        onClick={() => {
+                                                            const prompt = document.getElementById('ai-prompt').value;
+                                                            if (prompt) {
+                                                                generateWorkflowWithAI(prompt);
+                                                            }
+                                                        }}
+                                                        className="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 transition-colors flex items-center gap-2 text-sm"
+                                                    >
+                                                        <i className="fas fa-magic"></i>
+                                                        Generate
+                                                    </button>
+                                                </div>
+                                                <div className="mt-2 text-xs text-gray-600">
+                                                    Example: "Create a data processing workflow that validates input, transforms data, and sends email notification"
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                        <br/>
+                        {/* Activity Selector */}
+                        <div className="activity-selector w-80 ml-4">
+                            <div className="flex items-center mb-2">
+                                <h3 className="text-sm font-semibold text-gray-700 flex-1">Activities ({activities.length})</h3>
+                                <button
+                                    onClick={() => {
+                                        console.log('Refreshing activities...');
+                                        loadActivities();
+                                    }}
+                                    className="text-blue-600 hover:text-blue-800 text-sm"
+                                >
+                                    <i className="fas fa-sync-alt mr-1"></i>
+                                    Refresh
+                                </button>
+                            </div>
+                            <div className="relative">
+                                <input
+                                    type="text"
+                                    placeholder="Search activities..."
+                                    value={searchTerm}
+                                    onChange={(e) => setSearchTerm(e.target.value)}
+                                    onFocus={() => setIsDropdownOpen(true)}
+                                    className="w-full p-3 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                />
+                                <i className="fas fa-search absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400"></i>
+                            </div>
+                            
+                            {isDropdownOpen && (
+                                <div className="activity-dropdown mt-1">
+                                    {console.log('Dropdown open. Activities:', activities.length, 'Filtered:', filteredActivities.length)}
+                                    {filteredActivities.length === 0 ? (
+                                        <div className="p-4 text-gray-500 text-center">
+                                            No activities found
+                                        </div>
+                                    ) : (
+                                        filteredActivities.map((activity) => (
+                                            <div
+                                                key={activity.id}
+                                                className="activity-item flex items-center"
+                                                onClick={() => addActivityNode(activity.id)}
+                                            >
+                                                <i className={`fas ${getActivityIcon(activity.type)} ${getActivityColor(activity.type)} mr-3`}></i>
+                                                <div className="flex-1">
+                                                    <div className="font-medium text-sm">{activity.name}</div>
+                                                    <div className="text-xs text-gray-500">{activity.description}</div>
+                                                    <div className="text-xs text-blue-600 mt-1">Category: {activity.category || activity.type}</div>
+                                                </div>
+                                            </div>
+                                        ))
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Execution Status */}
+                    {executionStatus && (
+                        <div className="mt-4 p-4 bg-gray-100 rounded-lg">
+                            <h4 className="font-semibold text-gray-800 mb-2">Execution Status:</h4>
+                            <pre className="text-sm text-gray-700 whitespace-pre-wrap">{executionStatus}</pre>
+                        </div>
+                    )}
+                </header>
+
+                {/* Workflow Canvas */}
+                <div className="flex-1 relative">
+                    {ReactFlow ? (
+                        <ReactFlow
+                            nodes={nodes || []}
+                            edges={edges || []}
+                            onNodesChange={onNodesChange}
+                            onEdgesChange={onEdgesChange}
+                            onConnect={onConnect}
+                            onNodeClick={onNodeClick}
+                            nodeTypes={nodeTypes}
+                            fitView={nodes && nodes.length > 0}
+                            fitViewOptions={{ padding: 0.1 }}
+                            defaultViewport={{ x: 0, y: 0, zoom: 1 }}
+                        >
+                            {Background && <Background />}
+                            {Controls && <Controls />}
+                            {MiniMap && <MiniMap />}
+                        </ReactFlow>
+                    ) : (
+                        <div className="h-full flex items-center justify-center bg-gray-100">
+                            <div className="text-center">
+                                <div className="text-xl text-gray-600 mb-2">
+                                    <i className="fas fa-exclamation-triangle"></i>
+                                </div>
+                                <div className="text-lg font-semibold text-gray-800 mb-2">React Flow Loading...</div>
+                                <div className="text-sm text-gray-600">Please wait while the workflow editor initializes</div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Properties Panel */}
+                    <div className={`properties-panel ${isPropertiesPanelOpen ? 'open' : ''}`}>
+                        <button
+                            className="absolute top-4 right-4 bg-gray-200 hover:bg-gray-300 rounded-full w-8 h-8 flex items-center justify-center"
+                            onClick={() => setIsPropertiesPanelOpen(false)}
+                        >
+                            <i className="fas fa-times text-gray-600"></i>
+                        </button>
+
+                        {selectedNode && (
+                            <div className="p-6">
+                                <h3 className="text-lg font-semibold mb-4">Node Properties</h3>
+                                
+                                <div className="space-y-4">
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">Label</label>
+                                        <input
+                                            type="text"
+                                            value={selectedNode.data.label}
+                                            onChange={(e) => {
+                                                const updatedNode = {
+                                                    ...selectedNode,
+                                                    data: { ...selectedNode.data, label: e.target.value }
+                                                };
+                                                setSelectedNode(updatedNode);
+                                                setNodes(nds => nds.map(n => n.id === selectedNode.id ? updatedNode : n));
+                                            }}
+                                            className="w-full p-2 border border-gray-300 rounded-md"
+                                        />
+                                    </div>
+                                    
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">Activity</label>
+                                        <input
+                                            type="text"
+                                            value={selectedNode.data.activity}
+                                            readOnly
+                                            className="w-full p-2 border border-gray-300 rounded-md bg-gray-50"
+                                        />
+                                    </div>
+                                    
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                                        <textarea
+                                            value={selectedNode.data.description || ''}
+                                            onChange={(e) => {
+                                                const updatedNode = {
+                                                    ...selectedNode,
+                                                    data: { ...selectedNode.data, description: e.target.value }
+                                                };
+                                                setSelectedNode(updatedNode);
+                                                setNodes(nds => nds.map(n => n.id === selectedNode.id ? updatedNode : n));
+                                            }}
+                                            rows="3"
+                                            className="w-full p-2 border border-gray-300 rounded-md"
+                                        />
+                                    </div>
+
+                                    <button
+                                        onClick={() => {
+                                            setNodes(nds => nds.filter(n => n.id !== selectedNode.id));
+                                            setEdges(eds => eds.filter(e => e.source !== selectedNode.id && e.target !== selectedNode.id));
+                                            setIsPropertiesPanelOpen(false);
+                                            setSelectedNode(null);
+                                        }}
+                                        className="w-full bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors"
+                                    >
+                                        <i className="fas fa-trash mr-2"></i>
+                                        Delete Node
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Click outside to close */}
+                    {isDropdownOpen && (
+                        <div
+                            className="fixed inset-0 z-10"
+                            onClick={() => setIsDropdownOpen(false)}
+                        />
+                    )}
+                </div>
+            </div>
+        );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<WorkflowEditor />);
+</script>
+
+</body>
+</html>

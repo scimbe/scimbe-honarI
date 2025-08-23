@@ -1,0 +1,805 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Enhanced Temporal Workflow Editor with VSCode Interface</title>
+    <link rel="icon" type="image/x-icon" href="/favicon.ico">
+    
+    <!-- React and React DOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    
+    <!-- Monaco Editor -->
+    <script src="https://unpkg.com/monaco-editor@0.45.0/min/vs/loader.js"></script>
+    
+    <!-- React Flow v11 -->
+    <script src="https://unpkg.com/reactflow@11.10.1/dist/umd/index.js"></script>
+    <link href="https://unpkg.com/reactflow@11.10.1/dist/style.css" rel="stylesheet">
+    
+    <!-- Babel for JSX -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- Icons and styling -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    
+    <!-- Split.js for resizable panels -->
+    <script src="https://unpkg.com/split.js@1.6.5/dist/split.min.js"></script>
+    
+    <style>
+        .editor-container {
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .editor-header {
+            height: 40px;
+            background: #2d3748;
+            color: white;
+            display: flex;
+            align-items: center;
+            padding: 0 16px;
+            border-bottom: 1px solid #4a5568;
+        }
+        
+        .editor-body {
+            flex: 1;
+            display: flex;
+            overflow: hidden;
+        }
+        
+        .activity-explorer {
+            width: 250px;
+            background: #f7fafc;
+            border-right: 1px solid #e2e8f0;
+            overflow-y: auto;
+        }
+        
+        .editor-main {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .editor-tabs {
+            height: 35px;
+            background: #edf2f7;
+            border-bottom: 1px solid #e2e8f0;
+            display: flex;
+            align-items: center;
+            overflow-x: auto;
+        }
+        
+        .editor-tab {
+            height: 35px;
+            padding: 0 16px;
+            background: #edf2f7;
+            border-right: 1px solid #e2e8f0;
+            display: flex;
+            align-items: center;
+            cursor: pointer;
+            white-space: nowrap;
+            user-select: none;
+        }
+        
+        .editor-tab.active {
+            background: white;
+            border-bottom: 1px solid white;
+        }
+        
+        .editor-tab .close-btn {
+            margin-left: 8px;
+            width: 16px;
+            height: 16px;
+            border-radius: 3px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            opacity: 0;
+            transition: opacity 0.2s;
+        }
+        
+        .editor-tab:hover .close-btn {
+            opacity: 1;
+        }
+        
+        .editor-tab .close-btn:hover {
+            background: #e2e8f0;
+        }
+        
+        .editor-content {
+            flex: 1;
+            position: relative;
+        }
+        
+        .monaco-editor-wrapper {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+        }
+        
+        .activity-item {
+            padding: 8px 16px;
+            cursor: pointer;
+            border-bottom: 1px solid #e2e8f0;
+            display: flex;
+            align-items: center;
+        }
+        
+        .activity-item:hover {
+            background: #edf2f7;
+        }
+        
+        .activity-item .icon {
+            margin-right: 8px;
+            color: #4a5568;
+        }
+        
+        .status-bar {
+            height: 22px;
+            background: #2d3748;
+            color: white;
+            display: flex;
+            align-items: center;
+            padding: 0 16px;
+            font-size: 12px;
+        }
+        
+        .gutter {
+            background-color: #e2e8f0;
+            background-repeat: no-repeat;
+            background-position: 50%;
+        }
+        
+        .gutter.gutter-horizontal {
+            background-image: url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAUAAAAeCAYAAADkftS9AAAAP0lEQVQoU2M4c+bMfxAGAgYYmwGrIIiDjrELjpo5aiZeMGvWrP8gDARMOHAYdOjQoSMmTpw4H8RmYDEzysXEAAAAA9METRzORAAAAABJRU5ErkJggg==');
+            cursor: ew-resize;
+        }
+        
+        .editor-loading {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            color: #4a5568;
+        }
+        
+        .test-results {
+            background: #f7fafc;
+            border-top: 1px solid #e2e8f0;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        
+        .test-result-item {
+            padding: 8px 16px;
+            border-bottom: 1px solid #e2e8f0;
+            display: flex;
+            align-items: center;
+        }
+        
+        .test-result-item.passed {
+            background: #f0fff4;
+            border-left: 3px solid #48bb78;
+        }
+        
+        .test-result-item.failed {
+            background: #fff5f5;
+            border-left: 3px solid #f56565;
+        }
+        
+        .toolbar {
+            padding: 8px 16px;
+            background: #edf2f7;
+            border-bottom: 1px solid #e2e8f0;
+            display: flex;
+            gap: 8px;
+        }
+        
+        .btn {
+            padding: 4px 12px;
+            border: 1px solid #cbd5e0;
+            border-radius: 4px;
+            background: white;
+            cursor: pointer;
+            font-size: 12px;
+        }
+        
+        .btn:hover {
+            background: #f7fafc;
+        }
+        
+        .btn.primary {
+            background: #3182ce;
+            color: white;
+            border-color: #3182ce;
+        }
+        
+        .btn.primary:hover {
+            background: #2c5282;
+        }
+    </style>
+</head>
+<body>
+
+<div id="root"></div>
+
+<script type="text/babel">
+    const { useState, useEffect, useCallback, useRef } = React;
+    
+    // Monaco Editor setup
+    let monacoPromise = null;
+    const getMonaco = () => {
+        if (!monacoPromise) {
+            monacoPromise = new Promise((resolve) => {
+                require.config({ paths: { vs: 'https://unpkg.com/monaco-editor@0.45.0/min/vs' } });
+                require(['vs/editor/editor.main'], () => {
+                    resolve(window.monaco);
+                });
+            });
+        }
+        return monacoPromise;
+    };
+    
+    // Editor Tab Component
+    const EditorTab = ({ tab, isActive, onSelect, onClose }) => {
+        return (
+            <div 
+                className={`editor-tab ${isActive ? 'active' : ''}`}
+                onClick={() => onSelect(tab.id)}
+            >
+                <i className={`fas ${tab.icon} mr-2`}></i>
+                <span>{tab.title}</span>
+                {tab.isDirty && <span className="text-yellow-500 ml-1">●</span>}
+                <button 
+                    className="close-btn"
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        onClose(tab.id);
+                    }}
+                >
+                    <i className="fas fa-times text-xs"></i>
+                </button>
+            </div>
+        );
+    };
+    
+    // Monaco Editor Component
+    const MonacoEditor = ({ value, language, onChange, theme = 'vs-dark' }) => {
+        const editorRef = useRef(null);
+        const containerRef = useRef(null);
+        
+        useEffect(() => {
+            let editor = null;
+            
+            getMonaco().then((monaco) => {
+                if (containerRef.current) {
+                    editor = monaco.editor.create(containerRef.current, {
+                        value: value || '',
+                        language: language || 'javascript',
+                        theme: theme,
+                        automaticLayout: true,
+                        minimap: { enabled: true },
+                        fontSize: 14,
+                        lineNumbers: 'on',
+                        roundedSelection: false,
+                        scrollBeyondLastLine: false,
+                        readOnly: false,
+                        formatOnPaste: true,
+                        formatOnType: true
+                    });
+                    
+                    editorRef.current = editor;
+                    
+                    // Setup change listener
+                    editor.onDidChangeModelContent(() => {
+                        if (onChange) {
+                            onChange(editor.getValue());
+                        }
+                    });
+                }
+            });
+            
+            return () => {
+                if (editor) {
+                    editor.dispose();
+                }
+            };
+        }, []);
+        
+        useEffect(() => {
+            if (editorRef.current && value !== editorRef.current.getValue()) {
+                editorRef.current.setValue(value || '');
+            }
+        }, [value]);
+        
+        useEffect(() => {
+            if (editorRef.current) {
+                const model = editorRef.current.getModel();
+                if (model) {
+                    window.monaco.editor.setModelLanguage(model, language || 'javascript');
+                }
+            }
+        }, [language]);
+        
+        return <div ref={containerRef} className="monaco-editor-wrapper" />;
+    };
+    
+    // Activity Explorer Component
+    const ActivityExplorer = ({ activities, onActivitySelect, selectedActivity }) => {
+        const [searchTerm, setSearchTerm] = useState('');
+        
+        const filteredActivities = activities.filter(activity => 
+            activity.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            activity.description.toLowerCase().includes(searchTerm.toLowerCase())
+        );
+        
+        return (
+            <div className="activity-explorer">
+                <div className="p-4 border-b border-gray-200">
+                    <h3 className="font-semibold text-gray-800 mb-2">Activities</h3>
+                    <input
+                        type="text"
+                        placeholder="Search activities..."
+                        className="w-full px-3 py-1 border border-gray-300 rounded text-sm"
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                    />
+                </div>
+                <div className="activity-list">
+                    {filteredActivities.map(activity => (
+                        <div
+                            key={activity.id}
+                            className={`activity-item ${selectedActivity?.id === activity.id ? 'bg-blue-100' : ''}`}
+                            onClick={() => onActivitySelect(activity)}
+                        >
+                            <i className="fas fa-code icon"></i>
+                            <div>
+                                <div className="font-medium text-sm">{activity.name}</div>
+                                <div className="text-xs text-gray-500">{activity.type || 'Custom'}</div>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </div>
+        );
+    };
+    
+    // Test Results Component
+    const TestResults = ({ results, onRunTests }) => {
+        if (!results) return null;
+        
+        return (
+            <div className="test-results">
+                <div className="toolbar">
+                    <button className="btn primary" onClick={onRunTests}>
+                        <i className="fas fa-play mr-1"></i>
+                        Run Tests
+                    </button>
+                    <span className="text-sm text-gray-600">
+                        {results.passed}/{results.total_tests} tests passed
+                    </span>
+                </div>
+                <div>
+                    {results.results?.map((result, index) => (
+                        <div key={index} className={`test-result-item ${result.passed ? 'passed' : 'failed'}`}>
+                            <i className={`fas ${result.passed ? 'fa-check text-green-500' : 'fa-times text-red-500'} mr-2`}></i>
+                            <div>
+                                <div className="font-medium text-sm">{result.test_name}</div>
+                                {result.error && <div className="text-xs text-red-600">{result.error}</div>}
+                                <div className="text-xs text-gray-500">{result.execution_time}ms</div>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </div>
+        );
+    };
+    
+    // Main Enhanced Workflow Editor Component
+    const EnhancedWorkflowEditor = () => {
+        const [activities, setActivities] = useState([]);
+        const [selectedActivity, setSelectedActivity] = useState(null);
+        const [openTabs, setOpenTabs] = useState([]);
+        const [activeTabId, setActiveTabId] = useState(null);
+        const [editorContent, setEditorContent] = useState({});
+        const [testResults, setTestResults] = useState(null);
+        const [loading, setLoading] = useState(true);
+        const [sessionId] = useState(() => 'session-' + Date.now());
+        
+        // Load activities on mount
+        useEffect(() => {
+            loadActivities();
+            loadSession();
+        }, []);
+        
+        const loadActivities = async () => {
+            try {
+                const response = await fetch('/api/activities');
+                const data = await response.json();
+                setActivities(data.activities || []);
+                setLoading(false);
+            } catch (error) {
+                console.error('Error loading activities:', error);
+                setLoading(false);
+            }
+        };
+        
+        const loadSession = async () => {
+            try {
+                const response = await fetch('/api/editor/session', {
+                    headers: { 'X-Session-ID': sessionId }
+                });
+                const session = await response.json();
+                
+                if (session.open_tabs) {
+                    setOpenTabs(session.open_tabs);
+                    if (session.editor_state?.activeTabId) {
+                        setActiveTabId(session.editor_state.activeTabId);
+                    }
+                }
+            } catch (error) {
+                console.error('Error loading session:', error);
+            }
+        };
+        
+        const saveSession = async () => {
+            try {
+                await fetch('/api/editor/session', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Session-ID': sessionId
+                    },
+                    body: JSON.stringify({
+                        open_tabs: openTabs,
+                        editor_state: { activeTabId, isDirty: false }
+                    })
+                });
+            } catch (error) {
+                console.error('Error saving session:', error);
+            }
+        };
+        
+        // Save session periodically
+        useEffect(() => {
+            const interval = setInterval(saveSession, 30000); // Save every 30 seconds
+            return () => clearInterval(interval);
+        }, [openTabs, activeTabId]);
+        
+        const onActivitySelect = async (activity) => {
+            setSelectedActivity(activity);
+            
+            // Open tabs for this activity if not already open
+            const codeTabId = `${activity.id}-code`;
+            const schemaTabId = `${activity.id}-schema`;
+            const testTabId = `${activity.id}-test`;
+            
+            const newTabs = [];
+            
+            // Add code tab
+            if (!openTabs.find(tab => tab.id === codeTabId)) {
+                newTabs.push({
+                    id: codeTabId,
+                    title: `${activity.name} - Code`,
+                    type: 'code',
+                    activityId: activity.id,
+                    icon: 'fa-code',
+                    isDirty: false
+                });
+            }
+            
+            // Add schema tab
+            if (!openTabs.find(tab => tab.id === schemaTabId)) {
+                newTabs.push({
+                    id: schemaTabId,
+                    title: `${activity.name} - Schema`,
+                    type: 'schema',
+                    activityId: activity.id,
+                    icon: 'fa-cog',
+                    isDirty: false
+                });
+            }
+            
+            // Add test tab
+            if (!openTabs.find(tab => tab.id === testTabId)) {
+                newTabs.push({
+                    id: testTabId,
+                    title: `${activity.name} - Tests`,
+                    type: 'test',
+                    activityId: activity.id,
+                    icon: 'fa-flask',
+                    isDirty: false
+                });
+            }
+            
+            if (newTabs.length > 0) {
+                setOpenTabs(prev => [...prev, ...newTabs]);
+                setActiveTabId(codeTabId); // Default to code tab
+            }
+            
+            // Load content for each tab type
+            await loadTabContent(activity.id, 'code');
+            await loadTabContent(activity.id, 'schema');
+            await loadTabContent(activity.id, 'test');
+        };
+        
+        const loadTabContent = async (activityId, type) => {
+            try {
+                const response = await fetch(`/api/editor/activities/${activityId}/${type}`);
+                const data = await response.json();
+                
+                const tabId = `${activityId}-${type}`;
+                let content = '';
+                
+                switch (type) {
+                    case 'code':
+                        content = data.code_content || '';
+                        break;
+                    case 'schema':
+                        content = JSON.stringify(data, null, 2);
+                        break;
+                    case 'test':
+                        content = Array.isArray(data) ? 
+                            data.map(test => test.test_code || '').join('\n\n') :
+                            '// No tests found';
+                        break;
+                }
+                
+                setEditorContent(prev => ({
+                    ...prev,
+                    [tabId]: content
+                }));
+            } catch (error) {
+                console.error(`Error loading ${type} content:`, error);
+            }
+        };
+        
+        const onTabSelect = (tabId) => {
+            setActiveTabId(tabId);
+        };
+        
+        const onTabClose = (tabId) => {
+            setOpenTabs(prev => prev.filter(tab => tab.id !== tabId));
+            if (activeTabId === tabId) {
+                const remainingTabs = openTabs.filter(tab => tab.id !== tabId);
+                setActiveTabId(remainingTabs.length > 0 ? remainingTabs[0].id : null);
+            }
+        };
+        
+        const onEditorChange = (tabId, value) => {
+            setEditorContent(prev => ({
+                ...prev,
+                [tabId]: value
+            }));
+            
+            // Mark tab as dirty
+            setOpenTabs(prev => prev.map(tab => 
+                tab.id === tabId ? { ...tab, isDirty: true } : tab
+            ));
+        };
+        
+        const saveCurrentTab = async () => {
+            if (!activeTabId) return;
+            
+            const tab = openTabs.find(t => t.id === activeTabId);
+            if (!tab) return;
+            
+            const content = editorContent[activeTabId];
+            let endpoint = '';
+            let payload = {};
+            
+            switch (tab.type) {
+                case 'code':
+                    endpoint = `/api/editor/activities/${tab.activityId}/code`;
+                    payload = { code: content, type: 'javascript' };
+                    break;
+                case 'schema':
+                    endpoint = `/api/editor/activities/${tab.activityId}/schema`;
+                    try {
+                        payload = { schema: JSON.parse(content) };
+                    } catch (e) {
+                        alert('Invalid JSON in schema');
+                        return;
+                    }
+                    break;
+                case 'test':
+                    endpoint = `/api/editor/activities/${tab.activityId}/tests`;
+                    payload = { 
+                        tests: [{
+                            test_name: 'Generated Test',
+                            test_input: {},
+                            expected_output: {},
+                            test_code: content
+                        }]
+                    };
+                    break;
+            }
+            
+            try {
+                const response = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                
+                const result = await response.json();
+                if (result.success) {
+                    // Mark tab as saved
+                    setOpenTabs(prev => prev.map(t => 
+                        t.id === activeTabId ? { ...t, isDirty: false } : t
+                    ));
+                    console.log('Saved successfully');
+                } else {
+                    alert('Save failed: ' + (result.error || result.message));
+                }
+            } catch (error) {
+                console.error('Save error:', error);
+                alert('Save failed');
+            }
+        };
+        
+        const runTests = async () => {
+            if (!selectedActivity) return;
+            
+            try {
+                const response = await fetch(`/api/editor/activities/${selectedActivity.id}/tests/run`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({})
+                });
+                
+                const results = await response.json();
+                setTestResults(results);
+            } catch (error) {
+                console.error('Test execution error:', error);
+            }
+        };
+        
+        const activeTab = openTabs.find(tab => tab.id === activeTabId);
+        const currentContent = activeTabId ? editorContent[activeTabId] || '' : '';
+        
+        // Determine language based on tab type
+        const getLanguage = (tab) => {
+            if (!tab) return 'javascript';
+            switch (tab.type) {
+                case 'code': return 'javascript';
+                case 'schema': return 'json';
+                case 'test': return 'javascript';
+                default: return 'javascript';
+            }
+        };
+        
+        if (loading) {
+            return (
+                <div className="editor-container">
+                    <div className="editor-loading">
+                        <i className="fas fa-spinner fa-spin mr-2"></i>
+                        Loading Enhanced Editor...
+                    </div>
+                </div>
+            );
+        }
+        
+        return (
+            <div className="editor-container">
+                <div className="editor-header">
+                    <i className="fas fa-code mr-2"></i>
+                    <span className="font-semibold">Enhanced Temporal Workflow Editor</span>
+                    <div className="ml-auto flex gap-2">
+                        <button className="btn" onClick={saveCurrentTab}>
+                            <i className="fas fa-save mr-1"></i>
+                            Save (Ctrl+S)
+                        </button>
+                        <button className="btn" onClick={runTests}>
+                            <i className="fas fa-play mr-1"></i>
+                            Run Tests
+                        </button>
+                    </div>
+                </div>
+                
+                <div className="editor-body">
+                    <ActivityExplorer 
+                        activities={activities}
+                        onActivitySelect={onActivitySelect}
+                        selectedActivity={selectedActivity}
+                    />
+                    
+                    <div className="editor-main">
+                        <div className="editor-tabs">
+                            {openTabs.map(tab => (
+                                <EditorTab
+                                    key={tab.id}
+                                    tab={tab}
+                                    isActive={tab.id === activeTabId}
+                                    onSelect={onTabSelect}
+                                    onClose={onTabClose}
+                                />
+                            ))}
+                        </div>
+                        
+                        <div className="editor-content">
+                            {activeTab ? (
+                                <MonacoEditor
+                                    value={currentContent}
+                                    language={getLanguage(activeTab)}
+                                    onChange={(value) => onEditorChange(activeTabId, value)}
+                                    theme="vs-light"
+                                />
+                            ) : (
+                                <div className="editor-loading">
+                                    <div className="text-center">
+                                        <i className="fas fa-folder-open text-4xl text-gray-400 mb-4"></i>
+                                        <p className="text-gray-600">Select an activity to start editing</p>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                        
+                        {activeTab?.type === 'test' && testResults && (
+                            <TestResults 
+                                results={testResults}
+                                onRunTests={runTests}
+                            />
+                        )}
+                    </div>
+                </div>
+                
+                <div className="status-bar">
+                    <span>
+                        {activeTab ? `${activeTab.title} - ${getLanguage(activeTab)}` : 'No file selected'}
+                    </span>
+                    <div className="ml-auto flex gap-4">
+                        <span>{activities.length} activities loaded</span>
+                        <span>{openTabs.length} tabs open</span>
+                        <span>Session: {sessionId.slice(-8)}</span>
+                    </div>
+                </div>
+            </div>
+        );
+    };
+    
+    // Keyboard shortcuts
+    useEffect(() => {
+        const handleKeyDown = (e) => {
+            if (e.ctrlKey || e.metaKey) {
+                switch (e.key) {
+                    case 's':
+                        e.preventDefault();
+                        // Trigger save (would need to be passed from component)
+                        break;
+                    case 'r':
+                        e.preventDefault();
+                        // Trigger test run
+                        break;
+                }
+            }
+        };
+        
+        document.addEventListener('keydown', handleKeyDown);
+        return () => document.removeEventListener('keydown', handleKeyDown);
+    }, []);
+    
+    // Initialize Split.js for resizable panels
+    useEffect(() => {
+        const splits = Split(['.activity-explorer', '.editor-main'], {
+            sizes: [20, 80],
+            minSize: [200, 400],
+            gutterSize: 4,
+            cursor: 'ew-resize'
+        });
+        
+        return () => splits.destroy();
+    }, []);
+    
+    // Render the application
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<EnhancedWorkflowEditor />);
+</script>
+
+</body>
+</html>

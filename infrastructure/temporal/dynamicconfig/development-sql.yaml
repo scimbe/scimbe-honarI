@@ -1,0 +1,90 @@
+# Temporal Dynamic Configuration for Development Environment
+
+# Worker and Task Queue Configuration
+frontend.workerVersioningDataAPIs:
+  - value: true
+    constraints: {}
+
+frontend.workerVersioningWorkflowAPIs:
+  - value: true
+    constraints: {}
+
+frontend.enableUpdateWorkflowExecution:
+  - value: true
+    constraints: {}
+
+# Workflow and Activity Limits
+limit.maxIDLength:
+  - value: 1000
+    constraints: {}
+
+limit.workflowSize:
+  - value: 52428800  # 50MB
+    constraints: {}
+
+limit.historySize:
+  - value: 52428800  # 50MB
+    constraints: {}
+
+limit.historyCount:
+  - value: 50000
+    constraints: {}
+
+# Performance Optimizations
+matching.numTaskqueueReadPartitions:
+  - value: 4
+    constraints: {}
+
+matching.numTaskqueueWritePartitions:
+  - value: 4
+    constraints: {}
+
+# Retention and Archival
+system.advancedVisibilityWritingMode:
+  - value: "on"
+    constraints: {}
+
+system.enableReadFromClosedExecutionV2:
+  - value: true
+    constraints: {}
+
+# Search Attributes
+system.forceSearchAttributesCacheRefreshOnRead:
+  - value: true
+    constraints: {}
+
+# Metrics and Observability
+system.enableActivityLocalDispatchByDomain:
+  - value: true
+    constraints: {}
+
+# Memory and Resource Management
+history.persistenceMaxQPS:
+  - value: 3000
+    constraints: {}
+
+history.historyMgrNumConns:
+  - value: 50
+    constraints: {}
+
+# Task Processing
+worker.taskProcessorCompleteTaskFailureRetryCount:
+  - value: 3
+    constraints: {}
+
+worker.taskProcessorQueryTaskFailureRetryCount:
+  - value: 3
+    constraints: {}
+
+# Development-specific settings
+frontend.enableClientVersionCheck:
+  - value: false
+    constraints: {}
+
+frontend.disallowQuery:
+  - value: false
+    constraints: {}
+
+frontend.enableNamespaceNotActiveAutoForwarding:
+  - value: true
+    constraints: {}

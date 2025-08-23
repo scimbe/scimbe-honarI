@@ -1,0 +1,24 @@
+# Temporal development configuration
+system.enableNamespaceNotActiveAutoForwarding:
+  - value: true
+    constraints: {}
+
+system.forceSearchAttributesCacheRefreshOnRead:
+  - value: true
+    constraints: {}
+
+frontend.enableUpdateWorkflowExecution:
+  - value: true
+    constraints: {}
+
+frontend.enableUpdateWorkflowExecutionAsyncAccepted:
+  - value: true
+    constraints: {}
+
+system.enableActivityEagerExecution:
+  - value: true
+    constraints: {}
+
+worker.enableLoggingInReplay:
+  - value: true
+    constraints: {}
