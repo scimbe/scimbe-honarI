@@ -5,8 +5,12 @@
 import Redis from 'ioredis';
 
 const redis = new Redis({
-  host: process.env.REDIS_HOST || 'redis',
-  port: parseInt(process.env.REDIS_PORT || '6379')
+  host: process.env.REDIS_HOST || 'temporal-redis',
+  port: parseInt(process.env.REDIS_PORT || '6379'),
+  maxRetriesPerRequest: 3,
+  retryDelayOnFailover: 100,
+  connectTimeout: 5000,
+  lazyConnect: true
 });
 
 export async function loadWorkflowDefinition(workflowId: string): Promise<any> {
