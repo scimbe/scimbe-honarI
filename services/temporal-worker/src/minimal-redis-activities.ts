@@ -1,8 +1,11 @@
 /**
  * MINIMAL PostgreSQL + Redis Activities - GUARANTEED TO BUILD
+ * Updated to use generic and stable regex parser
  */
 
 import Redis from 'ioredis';
+import { RegexParser, SafeFunctionExecutor } from './utils/regex-parser';
+import { RedisValidator } from './utils/redis-validator';
 
 const redis = new Redis({
   host: process.env.REDIS_HOST || 'temporal-redis',
@@ -11,6 +14,14 @@ const redis = new Redis({
   retryDelayOnFailover: 100,
   connectTimeout: 5000,
   lazyConnect: true
+});
+
+// Initialize Redis validator with improved settings
+const redisValidator = new RedisValidator(redis, {
+  keyPrefix: 'temporal:workflow:',
+  ttl: 3600, // 1 hour
+  maxKeyLength: 200,
+  maxValueSize: 512 * 1024 // 512KB
 });
 
 export async function loadWorkflowDefinition(workflowId: string): Promise<any> {
@@ -33,7 +44,7 @@ export async function loadWorkflowDefinition(workflowId: string): Promise<any> {
     const client = new Client({
       host: process.env.POSTGRES_HOST || 'postgres',
       port: 5432,
-      database: 'temporal_ai_platform',
+      database: 'temporal_ai_platform_clean',
       user: 'temporal',
       password: 'temporal'
     });
@@ -47,7 +58,7 @@ export async function loadWorkflowDefinition(workflowId: string): Promise<any> {
     const workflowQuery = `
       SELECT id, name, description, activities, configuration
       FROM workflow_definitions 
-      WHERE id = $1 OR name = $1
+      WHERE id = $1
       LIMIT 1
     `;
     console.log('🔍 MINIMAL-DEBUG: Workflow query SQL:', workflowQuery);
@@ -56,7 +67,7 @@ export async function loadWorkflowDefinition(workflowId: string): Promise<any> {
     
     if (workflowResult.rows.length > 0) {
       const workflow = workflowResult.rows[0];
-      console.log('✅ POSTGRESQL: Loaded workflow from database:', workflow.name);
+      console.log('✅ POSTGRESQL: Loaded workflow from database by ID:', workflow.id, '(name:', workflow.name, ')');
       
       // Load activities from activity_library by IDs
       console.log('🔍 MINIMAL-DEBUG: Loading activities for workflow:', workflowId);
@@ -306,100 +317,86 @@ export async function executeActivity(params: {
     const client = new Client({
       host: process.env.POSTGRES_HOST || 'postgres',
       port: 5432,
-      database: 'temporal_ai_platform',
+      database: 'temporal_ai_platform_clean',
       user: 'temporal',
       password: 'temporal'
     });
     
     await client.connect();
     
-    // Load activity by ID from activity_library
+    // Load activity by ID ONLY from activity_library (unique IDs only)
     const activityResult = await client.query(`
       SELECT id, name, type, code, inputs, outputs
       FROM activity_library 
-      WHERE id = $1 OR name = $1
+      WHERE id = $1
       LIMIT 1
     `, [activityName]);
     
     if (activityResult.rows.length === 0) {
       await client.end();
-      throw new Error(`Activity not found in database: ${activityName}`);
+      throw new Error(`Activity not found in database by ID: ${activityName}`);
     }
     
     const activity = activityResult.rows[0];
-    console.log(`✅ POSTGRESQL: Loading activity by ID: ${activity.id} (${activity.name})`);
+    console.log('✅ POSTGRESQL: Loaded activity by ID:', activity.id, '(name:', activity.name, ')');
     
     await client.end();
     
-    // Execute the dynamic activity code
+    // Execute the dynamic activity code using safe regex parser
     try {
-      // Create a safe execution context for the dynamic code
-      const dynamicFunction = new Function(
-        'input', 
-        'previousData', 
-        'redis', 
-        'sessionId', 
-        'workflowId', 
-        `
-        ${activity.code}
-        
-        // Extract the function name from the code
-        const functionMatch = \`${activity.code}\`.match(/function\s+(\w+)\s*\(/); 
-        if (functionMatch && typeof eval(functionMatch[1]) === 'function') {
-          return eval(functionMatch[1])(input, previousData);
-        } else {
-          throw new Error('Dynamic activity function not found in code');
-        }
-        `
-      );
+      // Extract functions using generic regex parser
+      const functions = RegexParser.extractFunctions(activity.code);
       
-      // Load previous data from Redis for parameter chaining
-      const allKeys = await redis.keys(`${sessionId}.${workflowId}.*`);
+      if (functions.length === 0) {
+        throw new Error(`No functions found in activity code for ${activity.name}`);
+      }
+      
+      // Use the first valid function (prioritized by specificity)
+      const primaryFunction = functions[0];
+      
+      if (!RegexParser.isValidFunctionName(primaryFunction.name)) {
+        throw new Error(`Invalid function name '${primaryFunction.name}' in activity ${activity.name}`);
+      }
+      
+      console.log(`🔍 REGEX: Found function '${primaryFunction.name}' (type: ${primaryFunction.type}, params: [${primaryFunction.parameters.join(', ')}])`);
+      
+      // Load previous data from Redis using validator
+      const storedParameters = await redisValidator.getAllParameters(sessionId, workflowId);
       const previousData: Record<string, any> = {};
       
-      for (const key of allKeys) {
-        const value = await redis.get(key);
-        if (value) {
-          try {
-            const parsed = JSON.parse(value);
-            const paramName = key.split('.').pop();
-            if (paramName) {
-              previousData[paramName] = parsed;
-            }
-          } catch (e) {
-            // Skip invalid JSON
-          }
-        }
+      // Convert stored parameters to simple key-value pairs for function execution
+      for (const [paramName, storedParam] of Object.entries(storedParameters)) {
+        previousData[paramName] = storedParam.value;
       }
       
       console.log(`🔗 REDIS: Found ${Object.keys(previousData).length} previous parameters for ${activityName}`);
       
-      // Execute the dynamic function
-      const result = dynamicFunction(input, previousData, redis, sessionId, workflowId);
-      
-      // Store result in Redis using activity-specific parameter pattern
-      if (result && typeof result === 'object') {
-        for (const [key, value] of Object.entries(result)) {
-          // Skip metadata fields
-          if (['timestamp', 'validated'].includes(key)) continue;
-          
-          const parameterName = activity.name === 'validate_input' ? 
-            (key === 'radius' ? 'validated_radius' : key) :
-            (key === 'area' ? 'calculated_area' : key);
-          
-          const redisKey = `${sessionId}.${workflowId}.${parameterName}`;
-          await redis.set(redisKey, JSON.stringify({
-            value,
-            type: typeof value,
-            activityName: activity.name,
-            activityId: activity.id,
-            workflowId,
-            sessionId,
-            timestamp: Date.now()
-          }));
-          
-          console.log(`💾 REDIS: Stored ${parameterName} = ${value} for activity ${activity.name}`);
+      // Execute the function safely using SafeFunctionExecutor
+      const functionArgs = [input, previousData, redis, sessionId, workflowId];
+      const result = await SafeFunctionExecutor.executeFunction(
+        activity.code,
+        primaryFunction.name,
+        functionArgs,
+        {
+          timeout: 30000,
+          allowedGlobals: ['console', 'JSON', 'Date', 'Math', 'parseInt', 'parseFloat'],
+          memoryLimit: 50 * 1024 * 1024
         }
+      );
+      
+      // Store result in Redis using the improved validator
+      if (result && typeof result === 'object') {
+        const storedKeys = await redisValidator.storeParameters(
+          sessionId,
+          workflowId,
+          result,
+          {
+            activityName: activity.name,
+            activityId: activity.id
+          }
+        );
+        
+        console.log(`💾 REDIS: Stored ${storedKeys.length} parameters for activity ${activity.name}: ${storedKeys.join(', ')}`);
       }
       
       console.log(`✅ DYNAMIC: Activity ${activity.name} executed successfully`);
@@ -417,133 +414,31 @@ export async function executeActivity(params: {
     console.log('⚠️ FALLBACK: Using hardcoded activity execution');
     
     if (activityName === 'validate_input') {
-      // Detect if this is a circle workflow by checking the workflow ID
-      const isCircleWorkflow = workflowId.includes('fbc7b314-4641-4dfc-8c69-5d9803decd1b') || 
-                              workflowId.toLowerCase().includes('circle');
-      
-      if (isCircleWorkflow) {
-        // Validate radius for circle workflow
-        const radius = input.parameters?.radius || input.radius || input.user_input || 5;
-        
-        if (typeof radius !== 'number' || radius <= 0 || radius > 100) {
-          throw new Error('Invalid input: Please provide a positive radius between 0 and 100');
-        }
-        
-        const result = { validated_radius: radius, validated: true };
-        
-        const key = `${sessionId}.${workflowId}.validated_radius`;
-        await redis.set(key, JSON.stringify({
-          value: radius,
-          type: 'number',
-          activityName: 'validate_input',
-          workflowId,
-          sessionId,
-          timestamp: Date.now()
-        }));
-        
-        console.log('✅ FALLBACK: Stored validated_radius in Redis for circle workflow:', radius);
-        return result;
-      } else {
-        // Validate integer for factorial workflow
-        const number = input.parameters?.number || input.number || input.user_input || 5;
-        
-        if (typeof number !== 'number' || number < 0 || number > 20 || !Number.isInteger(number)) {
-          throw new Error('Invalid input: Please provide an integer between 0 and 20');
-        }
-        
-        const result = { validated_integer: number, validated: true };
-        
-        const key = `${sessionId}.${workflowId}.validated_integer`;
-        await redis.set(key, JSON.stringify({
-          value: number,
-          type: 'number',
-          activityName: 'validate_input',
-          workflowId,
-          sessionId,
-          timestamp: Date.now()
-        }));
-        
-        console.log('✅ FALLBACK: Stored validated_integer in Redis for factorial workflow:', number);
-        return result;
-      }
+      console.error('❌ FALLBACK ERROR: Activity validate_input not found in database');
+      console.error('❌ REASON: This activity should be loaded from activity_library table, not hardcoded fallback');
+      console.error('❌ SOLUTION: Ensure activity is properly stored in database with correct implementation');
+      throw new Error(`Activity '${activityName}' not found in activity library. This fallback should not execute. Please ensure the activity is properly defined in the database.`);
     }
     
     if (activityName === 'calculate_factorial') {
-      const numberKey = `${sessionId}.${workflowId}.validated_integer`;
-      const numberData = await redis.get(numberKey);
-      
-      if (!numberData) {
-        throw new Error('Validated integer not found in Redis');
-      }
-      
-      const number = JSON.parse(numberData).value;
-      
-      // Calculate factorial
-      let factorial = 1;
-      for (let i = 1; i <= number; i++) {
-        factorial *= i;
-      }
-      
-      const factorialKey = `${sessionId}.${workflowId}.factorial_result`;
-      await redis.set(factorialKey, JSON.stringify({
-        value: factorial,
-        type: 'number',
-        activityName: 'calculate_factorial',
-        workflowId,
-        sessionId,
-        timestamp: Date.now()
-      }));
-      
-      console.log('✅ FALLBACK: Read number from Redis:', number);
-      console.log('✅ FALLBACK: Calculated and stored factorial:', factorial);
-      
-      return { factorial_result: factorial, input_number: number };
+      console.error('❌ FALLBACK ERROR: Activity calculate_factorial not found in database');
+      console.error('❌ REASON: This activity should be loaded from activity_library table, not hardcoded fallback');
+      console.error('❌ SOLUTION: Ensure activity is properly stored in database with correct implementation');
+      throw new Error(`Activity '${activityName}' not found in activity library. This fallback should not execute. Please ensure the activity is properly defined in the database.`);
     }
     
     if (activityName === 'calculate_circle_area') {
-      // Mock fallback for circle area calculation
-      const radius = input?.radius || 5;
-      const area = Math.PI * radius * radius;
-      
-      console.log('✅ FALLBACK: Mock circle area calculation for radius:', radius);
-      return { calculated_area: area, input_radius: radius, formula: 'π × r²' };
+      console.error('❌ FALLBACK ERROR: Activity calculate_circle_area not found in database');
+      console.error('❌ REASON: This activity should be loaded from activity_library table, not hardcoded fallback');
+      console.error('❌ SOLUTION: Ensure activity is properly stored in database with correct implementation');
+      throw new Error(`Activity '${activityName}' not found in activity library. This fallback should not execute. Please ensure the activity is properly defined in the database.`);
     }
     
     if (activityName === 'format_result') {
-      // Check for both circle area and factorial results
-      const areaKey = `${sessionId}.${workflowId}.calculated_area`;
-      const factorialKey = `${sessionId}.${workflowId}.factorial_result`;
-      
-      const areaData = await redis.get(areaKey);
-      const factorialData = await redis.get(factorialKey);
-      
-      if (areaData) {
-        // Format circle area result
-        const areaResult = JSON.parse(areaData).value;
-        const radiusKey = `${sessionId}.${workflowId}.validated_radius`;
-        const radiusData = await redis.get(radiusKey);
-        const inputRadius = radiusData ? JSON.parse(radiusData).value : 'unknown';
-        
-        const formattedResult = `The area of a circle with radius ${inputRadius} is ${areaResult.toFixed(2)} square units`;
-        
-        console.log('✅ FALLBACK: Formatted circle area result:', formattedResult);
-        
-        return { formatted_result: formattedResult, area: areaResult, radius: inputRadius };
-      } else if (factorialData) {
-        // Format factorial result  
-        const factorialResult = JSON.parse(factorialData).value;
-        const numberKey = `${sessionId}.${workflowId}.validated_integer`;
-        const numberData = await redis.get(numberKey);
-        const inputNumber = numberData ? JSON.parse(numberData).value : 'unknown';
-        
-        const formattedResult = `The factorial of ${inputNumber} is ${factorialResult}`;
-        
-        console.log('✅ FALLBACK: Formatted factorial result:', formattedResult);
-        
-        return { formatted_result: formattedResult, factorial: factorialResult, input: inputNumber };
-      } else {
-        throw new Error('No calculation results found in Redis for formatting');
-      }
+      console.error('❌ FALLBACK ERROR: Activity format_result not found in database');
+      console.error('❌ REASON: This activity should be loaded from activity_library table, not hardcoded fallback');
+      console.error('❌ SOLUTION: Ensure activity is properly stored in database with correct implementation');
+      throw new Error(`Activity '${activityName}' not found in activity library. This fallback should not execute. Please ensure the activity is properly defined in the database.`);
     }
     
     // Email workflow activities fallback
