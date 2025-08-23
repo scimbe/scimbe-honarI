@@ -45,8 +45,8 @@ export class DatabaseProvider {
       const query = `
         SELECT 
           id, name, version, type, description, 
-          implementation, input_schema, output_schema,
-          timeout, retry_policy, resource_limits, metadata,
+          code as implementation, inputs as input_schema, outputs as output_schema,
+          timeout_config->>'startToCloseTimeout' as timeout, retry_policy, metadata,
           created_at, updated_at
         FROM activity_library 
         WHERE id = $1 OR name = $1
@@ -86,8 +86,8 @@ export class DatabaseProvider {
       const query = `
         SELECT 
           id, name, version, type, description,
-          implementation, input_schema, output_schema,
-          timeout, retry_policy, resource_limits, metadata,
+          code as implementation, inputs as input_schema, outputs as output_schema,
+          timeout_config->>'startToCloseTimeout' as timeout, retry_policy, metadata,
           created_at, updated_at
         FROM activity_library 
         WHERE id = ANY($1)
@@ -116,15 +116,11 @@ export class DatabaseProvider {
       
       const query = `
         SELECT 
-          wd.id, wd.name, wd.version, wd.specification, wd.metadata,
-          array_agg(DISTINCT al.id) as activity_ids
+          wd.id, wd.name, wd.description, wd.activities, wd.configuration,
+          wd.input_data, wd.redis_keys, wd.created_at
         FROM workflow_definitions wd
-        LEFT JOIN activity_library al ON al.id = ANY(
-          SELECT jsonb_array_elements_text(wd.specification->'activities')
-        )
         WHERE wd.id = $1 OR wd.name = $1
-        GROUP BY wd.id, wd.name, wd.version, wd.specification, wd.metadata
-        ORDER BY wd.version DESC, wd.created_at DESC
+        ORDER BY wd.created_at DESC
         LIMIT 1
       `;
       
@@ -136,17 +132,42 @@ export class DatabaseProvider {
       }
 
       const row = result.rows[0];
-      const specification = typeof row.specification === 'string' 
-        ? JSON.parse(row.specification) 
-        : row.specification;
+      const activities = typeof row.activities === 'string' 
+        ? JSON.parse(row.activities) 
+        : (row.activities || []);
+      
+      // Extract activity references and steps from the activities JSON
+      const activityRefs = Array.isArray(activities) ? activities.map((act: any, index: number) => ({
+        id: act.id || `activity-${index}`,
+        name: act.name || act.id || `Activity ${index + 1}`,
+        type: act.type || 'javascript',
+        configuration: act.configuration || {},
+        dependencies: act.dependencies || [],
+        required: act.required !== false,
+        parallel: act.parallel || false
+      })) : [];
+
+      // Create steps from activities
+      const steps = activityRefs.map((ref: any, index: number) => ({
+        id: `step-${index + 1}`,
+        name: ref.name,
+        activityId: ref.id,
+        dependencies: index > 0 ? [`step-${index}`] : [],
+        parallel: ref.parallel
+      }));
 
       return {
         id: row.id,
         name: row.name,
-        version: row.version,
-        activities: specification.activities || [],
-        steps: specification.steps || [],
-        metadata: row.metadata || {}
+        version: '1.0.0', // Default version since column doesn't exist
+        activities: activityRefs,
+        steps: steps,
+        metadata: {
+          description: row.description,
+          configuration: row.configuration,
+          inputData: row.input_data,
+          redisKeys: row.redis_keys
+        }
       };
       
     } catch (error) {
@@ -173,8 +194,8 @@ export class DatabaseProvider {
       let query = `
         SELECT 
           id, name, version, type, description,
-          implementation, input_schema, output_schema,
-          timeout, retry_policy, resource_limits, metadata,
+          code as implementation, inputs as input_schema, outputs as output_schema,
+          timeout_config->>'startToCloseTimeout' as timeout, retry_policy, metadata,
           created_at, updated_at
         FROM activity_library 
         WHERE 1=1
@@ -339,9 +360,7 @@ export class DatabaseProvider {
       retryPolicy: typeof row.retry_policy === 'string' 
         ? JSON.parse(row.retry_policy) 
         : row.retry_policy,
-      resources: typeof row.resource_limits === 'string' 
-        ? JSON.parse(row.resource_limits) 
-        : row.resource_limits,
+      resources: row.metadata?.resource_limits || null,
       metadata: typeof row.metadata === 'string' 
         ? JSON.parse(row.metadata) 
         : row.metadata,

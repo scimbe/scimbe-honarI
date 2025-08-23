@@ -6,13 +6,11 @@
 import { Worker, NativeConnection } from '@temporalio/worker';
 import { createServiceLogger } from './utils/logger';
 import { TemporalWorkerHttpServer } from './http-server';
-import { GenericActivityLoader } from './activity-loader';
-import { createActivityLoaderConfig } from './activity-loader-config';
+import * as activities from './minimal-redis-activities';
 
 const logger = createServiceLogger('temporal-worker');
 
 let httpServer: TemporalWorkerHttpServer | null = null;
-let activityLoader: GenericActivityLoader | null = null;
 
 /**
  * Main function to start the temporal worker and HTTP server
@@ -26,33 +24,13 @@ async function startWorker() {
       address: process.env.TEMPORAL_ADDRESS || 'temporal-server:7233',
     });
 
-    // Initialize Generic Activity Loader with environment configuration
-    const config = createActivityLoaderConfig();
-    activityLoader = new GenericActivityLoader(config);
-    
-    // Create activity functions that use the generic loader
-    const dynamicActivities = {
-      loadWorkflowDefinition: async (workflowIdOrName: string) => {
-        return await activityLoader!.loadWorkflowDefinition(workflowIdOrName);
-      },
-      executeActivity: async (context: any) => {
-        return await activityLoader!.executeActivity(context);
-      },
-      storeActivityParameters: async (params: any) => {
-        return await activityLoader!.storeActivityParameters(params);
-      },
-      logExecution: async (params: any) => {
-        return await activityLoader!.logExecution(params);
-      }
-    };
-
-    // Create and start worker with dynamic activities
+    // Create and start worker with minimal activities
     const worker = await Worker.create({
       connection,
       namespace: process.env.TEMPORAL_NAMESPACE || 'default',
       taskQueue: process.env.TEMPORAL_TASK_QUEUE || 'workflow-automation',
       workflowsPath: require.resolve('./workflows-only'),
-      activities: dynamicActivities,
+      activities,
       maxConcurrentWorkflowTaskExecutions: 10,
       maxConcurrentActivityTaskExecutions: 100,
       bundlerOptions: {
