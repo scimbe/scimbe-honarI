@@ -18,6 +18,7 @@ import { NodeToolbar } from './panels/NodeToolbar';
 import { NodeConfigPanel } from './panels/NodeConfigPanel';
 import { ExecutionPanel } from './panels/ExecutionPanel';
 import { ParameterPanel } from './panels/ParameterPanel';
+import { ExecuteParameterDialog } from './modals/ExecuteParameterDialog';
 import { WorkflowEdge, WorkflowNode } from '@/types';
 import { toast } from 'react-toastify';
 
@@ -58,6 +59,7 @@ export const WorkflowEditor: React.FC = () => {
     setSelectedNode,
     setActivityTypes,
     setWorkflowTemplates,
+    setAvailableChains,
     setExecutionLogs,
     setIsExecuting,
     undo,
@@ -75,6 +77,7 @@ export const WorkflowEditor: React.FC = () => {
   const [showConfigPanel, setShowConfigPanel] = useState(false);
   const [showExecutionPanel, setShowExecutionPanel] = useState(false);
   const [showParameterPanel, setShowParameterPanel] = useState(false);
+  const [showExecuteDialog, setShowExecuteDialog] = useState(false);
 
   // Sync store with local state
   useEffect(() => {
@@ -85,21 +88,24 @@ export const WorkflowEditor: React.FC = () => {
     setLocalEdges(storeEdges);
   }, [storeEdges, setLocalEdges]);
 
-  // Function to load/reload activity types and templates
+  // Function to load/reload activity types, templates, and available chains
   const loadActivityData = useCallback(async () => {
     try {
-      const [activityTypes, workflowTemplates] = await Promise.all([
+      const [activityTypes, workflowTemplates, availableChains] = await Promise.all([
         workflowApi.getActivityTypes(),
-        workflowApi.getWorkflowTemplates()
+        workflowApi.getWorkflowTemplates(),
+        workflowApi.getChains()
       ]);
       console.log('Loaded activity types:', activityTypes);
+      console.log('Loaded available chains for subworkflows:', availableChains);
       setActivityTypes(activityTypes);
       setWorkflowTemplates(workflowTemplates);
+      setAvailableChains(availableChains);
     } catch (error) {
       console.error('Failed to load data:', error);
-      toast.error('Failed to load activity types and templates');
+      toast.error('Failed to load activity types, templates, and chains');
     }
-  }, [setActivityTypes, setWorkflowTemplates]);
+  }, [setActivityTypes, setWorkflowTemplates, setAvailableChains]);
 
   // Load activity types and templates on mount
   useEffect(() => {
@@ -231,12 +237,21 @@ export const WorkflowEditor: React.FC = () => {
     }
   };
 
-  const handleExecute = async () => {
+
+  const handleExecuteClick = () => {
+    if (!currentChain?.id) return;
+    setShowExecuteDialog(true);
+  };
+
+  const handleExecuteWithParameters = async (parameters: Record<string, any>) => {
     if (!currentChain?.id) return;
 
     setIsExecuting(true);
     try {
-      const executionId = await workflowApi.executeChain(currentChain.id);
+      console.log('🚀 Executing workflow with Redis-aware parameters:', parameters);
+      toast.info(`Executing with parameters: ${JSON.stringify(parameters)}`);
+      
+      const executionId = await workflowApi.executeChain(currentChain.id, parameters);
       toast.success(`Workflow execution started: ${executionId}`);
       setShowExecutionPanel(true);
       
@@ -339,7 +354,7 @@ export const WorkflowEditor: React.FC = () => {
               Save
             </button>
             <button
-              onClick={handleExecute}
+              onClick={handleExecuteClick}
               disabled={!currentChain?.id || isExecuting}
               className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
             >
@@ -391,6 +406,14 @@ export const WorkflowEditor: React.FC = () => {
             onClose={() => setShowParameterPanel(false)}
           />
         )}
+
+        {/* Execute Parameter Dialog */}
+        <ExecuteParameterDialog
+          workflowId={currentChain?.id || ''}
+          isOpen={showExecuteDialog}
+          onClose={() => setShowExecuteDialog(false)}
+          onExecute={handleExecuteWithParameters}
+        />
       </ReactFlowProvider>
     </div>
   );

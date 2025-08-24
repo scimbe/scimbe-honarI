@@ -128,8 +128,25 @@ export async function dynamicWorkflow(input: DynamicWorkflowInput): Promise<Dyna
   
   try {
     // Step 1: Load workflow definition from automation service
-    // Ensure workflowId is passed correctly
-    const workflowIdToLoad = input.workflowId || input.workflowDefinitionId || 'unknown_workflow';
+    // Ensure workflowId is passed correctly - handle object case for subworkflows
+    let workflowIdToLoad = input.workflowId || input.workflowDefinitionId || 'unknown_workflow';
+    
+    // Fix for subworkflow execution: if workflowId is an object, extract the workflowId property
+    if (typeof workflowIdToLoad === 'object' && workflowIdToLoad !== null) {
+      if (workflowIdToLoad.workflowId && typeof workflowIdToLoad.workflowId === 'string') {
+        workflowIdToLoad = workflowIdToLoad.workflowId;
+      } else if (workflowIdToLoad.id && typeof workflowIdToLoad.id === 'string') {
+        workflowIdToLoad = workflowIdToLoad.id;
+      } else {
+        throw new Error(`Invalid workflowId object: ${JSON.stringify(workflowIdToLoad)}. Expected object with 'workflowId' or 'id' property.`);
+      }
+    }
+    
+    // Ensure final workflowId is a string
+    if (typeof workflowIdToLoad !== 'string') {
+      throw new Error(`Invalid workflowId: ${JSON.stringify(workflowIdToLoad)}. Expected string after extraction.`);
+    }
+    
     const workflowDefinition = await dynamicActivities.loadWorkflowDefinition(workflowIdToLoad);
     
     // Step 2: Initialize execution tracking
@@ -152,24 +169,56 @@ export async function dynamicWorkflow(input: DynamicWorkflowInput): Promise<Dyna
     if (workflowDefinition.activities && workflowDefinition.activities.length > 0) {
       let currentInput = input.parameters;
       
+      console.log(`🔍 WRAPPER-ACTIVITIES: Found ${workflowDefinition.activities.length} activities to execute`);
+      console.log('🔍 WRAPPER-ACTIVITIES: Activity IDs:', workflowDefinition.activities.map(a => a.id));
+      
       for (const activity of workflowDefinition.activities) {
         const activityStartTime = Date.now();
         
+        console.log(`🔍 WRAPPER-ACTIVITY: Executing activity "${activity.id}" (name: "${activity.name}")`);
+        console.log('🔍 WRAPPER-ACTIVITY: WorkflowId to use:', workflowIdToLoad);
+        
         try {
-          // Execute activity with current input and session context
-          const activityResult = await dynamicActivities.executeActivity({
-            sessionId,
-            workflowId: workflowIdToLoad,
-            activityName: activity.name,
-            input: currentInput,
-            configuration: activity.configuration,
-          });
+          let activityResult;
+          
+          // Check if this is actually a subworkflow (contains UUID pattern) or a real activity
+          const isSubworkflow = activity.id.includes('-') && activity.id.length > 30; // UUID pattern
+          
+          if (isSubworkflow) {
+            console.log(`🔄 SUBWORKFLOW: Executing "${activity.id}" as subworkflow, not activity`);
+            
+            // Execute as subworkflow by calling dynamicWorkflow recursively
+            activityResult = await dynamicWorkflow({
+              workflowId: activity.id,
+              parameters: currentInput,
+              executionId: `sub_${activity.id}_${Date.now()}`,
+              sessionId: sessionId,
+              parentWorkflowId: workflowIdToLoad,
+              triggerType: 'workflow-chain'
+            });
+            
+            // Extract the actual result from the subworkflow response
+            activityResult = activityResult.result;
+            
+          } else {
+            console.log(`🔧 ACTIVITY: Executing "${activity.id}" as regular activity`);
+            console.log(`🔧 ACTIVITY-INPUT: Passing input:`, JSON.stringify(currentInput));
+            
+            // Execute as regular activity
+            activityResult = await dynamicActivities.executeActivity({
+              sessionId,
+              workflowId: workflowIdToLoad,
+              activityName: activity.id,
+              input: currentInput,
+              configuration: activity.configuration,
+            });
+          }
           
           // Store activity results in Redis for cross-activity access
           await dynamicActivities.storeActivityParameters({
             sessionId,
             workflowId: workflowIdToLoad,
-            activityName: activity.name,
+            activityName: activity.id,
             parameters: activityResult,
           });
           
@@ -197,7 +246,7 @@ export async function dynamicWorkflow(input: DynamicWorkflowInput): Promise<Dyna
           currentInput = { 
             ...currentInput, 
             ...activityResult,
-            [`${activity.name}_result`]: activityResult 
+            [`${activity.id}_result`]: activityResult 
           };
           
         } catch (error) {

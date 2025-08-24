@@ -5,7 +5,8 @@ import { workflowApi } from '@/services/api';
 import { Button } from '@/components/ui/Button';
 import { Input, Textarea } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
-import type { WorkflowNode, ActivityType, WorkflowTemplate } from '@/types';
+import { InputSchemaConfig } from './InputSchemaConfig';
+import type { WorkflowNode, ActivityType } from '@/types';
 
 interface NodeConfigPanelProps {
   onClose: () => void;
@@ -16,7 +17,8 @@ export const NodeConfigPanel: React.FC<NodeConfigPanelProps> = ({ onClose }) => 
     nodes, 
     selectedNode, 
     activityTypes, 
-    workflowTemplates, 
+    workflowTemplates,
+    availableChains,
     updateNode,
     deleteNode,
     saveToHistory,
@@ -25,7 +27,6 @@ export const NodeConfigPanel: React.FC<NodeConfigPanelProps> = ({ onClose }) => 
 
   const [formData, setFormData] = useState<Partial<WorkflowNode>>({});
   const [selectedActivityType, setSelectedActivityType] = useState<ActivityType | null>(null);
-  const [selectedWorkflowTemplate, setSelectedWorkflowTemplate] = useState<WorkflowTemplate | null>(null);
   const [activityCode, setActivityCode] = useState<string>('');
 
   const currentNode = nodes.find(n => n.id === selectedNode);
@@ -70,13 +71,9 @@ export const NodeConfigPanel: React.FC<NodeConfigPanelProps> = ({ onClose }) => 
         }
       }
       
-      // Load workflow template details if this is a subworkflow node
-      if (currentNode.type === 'subworkflow' && currentNode.data.workflowType) {
-        const workflowTemplate = workflowTemplates.find(t => t.template_id === currentNode.data.workflowType);
-        setSelectedWorkflowTemplate(workflowTemplate || null);
-      }
+      // Note: Subworkflows now use real workflow chains instead of templates
     }
-  }, [currentNode, activityTypes, workflowTemplates]);
+  }, [currentNode, activityTypes, workflowTemplates, availableChains]);
 
   if (!currentNode) {
     return (
@@ -156,11 +153,30 @@ export const NodeConfigPanel: React.FC<NodeConfigPanelProps> = ({ onClose }) => 
     }
   };
 
-  const handleWorkflowTypeChange = async (templateId: string) => {
-    const template = workflowTemplates.find(t => t.template_id === templateId);
-    setSelectedWorkflowTemplate(template || null);
+  const handleSubworkflowChainChange = async (chainId: string) => {
+    const selectedChain = availableChains.find(chain => chain.id === chainId);
     
-    handleInputChange('workflowType', templateId);
+    if (selectedChain) {
+      console.log('Selected subworkflow chain:', selectedChain);
+      
+      // Set the workflow type to the chain ID
+      handleInputChange('workflowType', chainId);
+      
+      // Set default inheritance settings
+      handleConfigChange('inheritAllParameters', true);
+      handleConfigChange('inheritRedisContext', true);
+      handleConfigChange('inheritRedisData', true);
+      
+      // Store the chain reference for parameter inheritance
+      handleConfigChange('selectedChain', selectedChain);
+      
+      // If the selected chain has subworkflows, cascade inheritance settings
+      const hasNestedSubworkflows = selectedChain.nodes?.some(node => node.type === 'subworkflow');
+      if (hasNestedSubworkflows) {
+        handleConfigChange('cascadeInheritance', true);
+        console.log('Chain has nested subworkflows - enabling cascade inheritance');
+      }
+    }
   };
 
   const renderActivityConfiguration = () => {
@@ -251,37 +267,161 @@ export const NodeConfigPanel: React.FC<NodeConfigPanelProps> = ({ onClose }) => 
     );
   };
 
+  const renderStartNodeConfiguration = () => {
+    if (currentNode?.type !== 'start') return null;
+
+    console.log('🔧 StartNode Configuration - Current Node:', currentNode);
+    console.log('🔧 StartNode Configuration - Form Data:', formData);
+
+    const handleSchemaChange = (schema: Record<string, any>) => {
+      console.log('🔧 StartNode Schema Change:', schema);
+      handleConfigChange('inputSchema', schema);
+    };
+    
+    return (
+      <div className="space-y-4">
+        <InputSchemaConfig
+          currentNode={currentNode}
+          allNodes={nodes}
+          activityTypes={activityTypes}
+          onSchemaChange={handleSchemaChange}
+        />
+      </div>
+    );
+  };
+
   const renderSubworkflowConfiguration = () => {
     if (currentNode.type !== 'subworkflow') return null;
 
+    // Get available chains for subworkflow (exclude current chain to prevent circular references)
+    const currentChainId = (currentNode.data as any)?.workflowChainId;
+    const availableChainsForSubflow = availableChains.filter(chain => 
+      chain.id !== currentChainId
+    );
+
+    // Get parent workflow parameters for inheritance
+    const parentStartNode = nodes.find(node => node.type === 'start');
+    const parentParameters = parentStartNode?.data?.config?.inputSchema || {};
+
+    // Get selected chain details
+    const selectedChain = availableChainsForSubflow.find(chain => 
+      chain.id === formData.data?.workflowType as string
+    );
+
     return (
       <div className="space-y-4">
-        <h4 className="font-medium text-gray-800">Sub-workflow Configuration</h4>
+        <h4 className="font-medium text-gray-800">🔗 Sub-workflow Configuration</h4>
         
         <Select
-          label="Workflow Template"
-          options={workflowTemplates.map(t => ({
-            value: t.template_id,
-            label: t.name
+          label="Available Workflow Chains"
+          options={availableChainsForSubflow.map(chain => ({
+            value: chain.id,
+            label: `${chain.name} (${chain.nodes?.length || 0} nodes)`
           }))}
           value={formData.data?.workflowType as string || ''}
-          onChange={handleWorkflowTypeChange}
-          placeholder="Select workflow template"
+          onChange={handleSubworkflowChainChange}
+          placeholder="Select workflow chain to embed"
         />
         
-        {selectedWorkflowTemplate && (
-          <div className="p-3 bg-gray-50 rounded">
-            <p className="text-sm text-gray-600">{selectedWorkflowTemplate.description}</p>
-            <div className="mt-2 flex flex-wrap gap-1">
-              {selectedWorkflowTemplate.tags.map(tag => (
-                <span
-                  key={tag}
-                  className="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded"
-                >
-                  {tag}
-                </span>
-              ))}
+        {selectedChain && (
+          <div className="space-y-4">
+            <div className="p-3 bg-blue-50 border border-blue-200 rounded">
+              <h5 className="font-medium text-blue-900 mb-2">📋 Chain Details</h5>
+              <p className="text-sm text-blue-700 mb-2">{selectedChain.description}</p>
+              <div className="text-xs text-blue-600">
+                <p><strong>Nodes:</strong> {selectedChain.nodes?.length || 0}</p>
+                <p><strong>Edges:</strong> {selectedChain.edges?.length || 0}</p>
+                {selectedChain.metadata?.tags && (
+                  <div className="mt-2 flex flex-wrap gap-1">
+                    {selectedChain.metadata.tags.map(tag => (
+                      <span key={tag} className="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded">
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
+
+            {/* Parameter Inheritance Configuration */}
+            <div className="p-3 bg-green-50 border border-green-200 rounded">
+              <h5 className="font-medium text-green-900 mb-2">🔄 Parameter Inheritance</h5>
+              <p className="text-sm text-green-700 mb-3">
+                Configure how parameters flow from parent workflow to subworkflow
+              </p>
+              
+              {Object.keys(parentParameters).length > 0 ? (
+                <div className="space-y-2">
+                  <p className="text-xs font-medium text-green-800">Available Parent Parameters:</p>
+                  <div className="flex flex-wrap gap-1">
+                    {Object.keys(parentParameters).map(paramName => (
+                      <span key={paramName} className="px-2 py-1 bg-green-100 text-green-800 text-xs rounded">
+                        {paramName}
+                      </span>
+                    ))}
+                  </div>
+                  <div className="mt-2">
+                    <label className="flex items-center space-x-2">
+                      <input
+                        type="checkbox"
+                        checked={(formData.data?.config as any)?.inheritAllParameters !== false}
+                        onChange={(e) => handleConfigChange('inheritAllParameters', e.target.checked)}
+                        className="rounded border-gray-300 focus:ring-green-500 focus:border-green-500"
+                      />
+                      <span className="text-sm text-green-700">Inherit all parent parameters</span>
+                    </label>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-xs text-green-600">
+                  No parameters defined in parent workflow. Create parameters in the Start node to enable inheritance.
+                </p>
+              )}
+            </div>
+
+            {/* Redis Access Configuration */}
+            <div className="p-3 bg-purple-50 border border-purple-200 rounded">
+              <h5 className="font-medium text-purple-900 mb-2">🗄️ Redis Access Configuration</h5>
+              <p className="text-sm text-purple-700 mb-3">
+                Subworkflow access to parent workflow's Redis context and data
+              </p>
+              
+              <div className="space-y-2">
+                <label className="flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                    checked={(formData.data?.config as any)?.inheritRedisContext !== false}
+                    onChange={(e) => handleConfigChange('inheritRedisContext', e.target.checked)}
+                    className="rounded border-gray-300 focus:ring-purple-500 focus:border-purple-500"
+                  />
+                  <span className="text-sm text-purple-700">Share Redis namespace with parent workflow</span>
+                </label>
+                
+                <label className="flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                    checked={(formData.data?.config as any)?.inheritRedisData !== false}
+                    onChange={(e) => handleConfigChange('inheritRedisData', e.target.checked)}
+                    className="rounded border-gray-300 focus:ring-purple-500 focus:border-purple-500"
+                  />
+                  <span className="text-sm text-purple-700">Access parent workflow Redis data</span>
+                </label>
+              </div>
+              
+              <div className="mt-2 text-xs text-purple-600">
+                <p><strong>Note:</strong> Subworkflows can access previous_result keys from parent workflow activities</p>
+              </div>
+            </div>
+
+            {/* Nested Subworkflow Warning */}
+            {selectedChain.nodes?.some(node => node.type === 'subworkflow') && (
+              <div className="p-3 bg-yellow-50 border border-yellow-200 rounded">
+                <h5 className="font-medium text-yellow-900 mb-2">⚠️ Nested Subworkflows Detected</h5>
+                <p className="text-sm text-yellow-700">
+                  This workflow contains subworkflows. Parameter and Redis inheritance will cascade through all nested levels.
+                </p>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -441,6 +581,15 @@ export const NodeConfigPanel: React.FC<NodeConfigPanelProps> = ({ onClose }) => 
             />
           </div>
         )}
+
+        {/* DEBUG: Show current node info */}
+        <div className="p-2 bg-yellow-100 border border-yellow-300 rounded text-xs">
+          <p><strong>DEBUG:</strong> Selected Node ID: {currentNode?.id || 'None'}</p>
+          <p><strong>DEBUG:</strong> Selected Node Type: {currentNode?.type || 'None'}</p>
+        </div>
+
+        {/* Start Node configuration */}
+        {renderStartNodeConfiguration()}
 
         {/* Activity configuration */}
         {renderActivityConfiguration()}
