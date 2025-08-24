@@ -11,7 +11,7 @@ async function cleanupDatabase() {
   const client = new Client({
     user: process.env.DB_USER || 'temporal',
     host: process.env.DB_HOST || 'localhost', 
-    database: process.env.DB_NAME || 'temporal_ai_platform',
+    database: process.env.DB_NAME || 'temporal_ai_platform_clean',
     password: process.env.DB_PASSWORD || 'temporal',
     port: process.env.DB_PORT || 5432,
   });

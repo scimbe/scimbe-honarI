@@ -18,6 +18,7 @@ interface WorkflowStore {
   // Available types and templates
   activityTypes: ActivityType[];
   workflowTemplates: WorkflowTemplate[];
+  availableChains: WorkflowChain[]; // Real workflow chains for subworkflows
   
   // UI state
   selectedNode: string | null;
@@ -45,6 +46,7 @@ interface WorkflowStore {
   setSelectedNode: (id: string | null) => void;
   setActivityTypes: (types: ActivityType[]) => void;
   setWorkflowTemplates: (templates: WorkflowTemplate[]) => void;
+  setAvailableChains: (chains: WorkflowChain[]) => void;
   setExecutionLogs: (logs: ExecutionLog[]) => void;
   setCurrentExecutionId: (id: string | null) => void;
   setIsExecuting: (executing: boolean) => void;
@@ -70,6 +72,7 @@ export const useWorkflowStore = create<WorkflowStore>()(
         edges: [],
         activityTypes: [],
         workflowTemplates: [],
+        availableChains: [],
         selectedNode: null,
         isDirty: false,
         isExecuting: false,
@@ -192,6 +195,8 @@ export const useWorkflowStore = create<WorkflowStore>()(
 
         setWorkflowTemplates: (workflowTemplates) => set({ workflowTemplates }),
 
+        setAvailableChains: (availableChains) => set({ availableChains }),
+
         setExecutionLogs: (executionLogs) => set({ executionLogs }),
 
         setCurrentExecutionId: (currentExecutionId) => set({ currentExecutionId }),
@@ -259,7 +264,8 @@ export const useWorkflowStore = create<WorkflowStore>()(
         name: 'workflow-store',
         partialize: (state) => ({
           activityTypes: state.activityTypes,
-          workflowTemplates: state.workflowTemplates
+          workflowTemplates: state.workflowTemplates,
+          availableChains: state.availableChains
         })
       }
     ),
